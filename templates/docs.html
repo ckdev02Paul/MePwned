@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MEPWNED · DOCS</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080808;--card:#0e0e0e;--border:#1e1e1e;
+  --green:#00ff41;--cyan:#00ccff;--red:#ff4444;
+  --yellow:#ffaa00;--magenta:#cc66ff;--dim:#555;
+  --text:#ccc;--text2:#888;--text3:#555;
+  --font:'JetBrains Mono','Consolas',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:30px 50px;line-height:1.7}
+h1{color:var(--green);font-size:1.6rem;letter-spacing:4px;margin-bottom:6px}
+.sub{color:var(--dim);font-size:.85rem;margin-bottom:30px;display:block}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-decoration:underline}
+.back{display:inline-block;margin-bottom:20px;font-size:.85rem;border:1px solid var(--border);padding:5px 14px;border-radius:3px}
+.back:hover{border-color:var(--green);color:var(--green)}
+
+/* tool categories */
+.cat{margin-bottom:35px}
+.cat-title{font-size:1rem;font-weight:bold;letter-spacing:2px;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.tool-card{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:14px 18px;margin-bottom:12px}
+.tool-card:hover{border-color:#333}
+.tc-header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.tc-dot{width:8px;height:8px;border-radius:50%}
+.tc-name{font-size:.95rem;font-weight:bold;letter-spacing:2px}
+.tc-tag{font-size:.72rem;color:var(--text3);border:1px solid var(--border);padding:2px 8px;border-radius:2px}
+.tc-desc{font-size:.82rem;color:var(--text2);margin-bottom:10px}
+.tc-modes{font-size:.78rem;color:var(--text3)}
+.tc-modes li{margin-bottom:3px;list-style:none;padding-left:16px;position:relative}
+.tc-modes li::before{content:"›";position:absolute;left:4px;color:var(--dim)}
+.tc-modes .crit{color:var(--red)}
+.tc-modes .high{color:var(--yellow)}
+.tc-modes .med{color:var(--text2)}
+
+/* usage section */
+.usage{margin-top:40px;border-top:1px solid var(--border);padding-top:25px}
+.usage h2{font-size:1.1rem;color:var(--cyan);letter-spacing:2px;margin-bottom:12px}
+.usage p{font-size:.85rem;color:var(--text2);margin-bottom:8px}
+.usage code{background:#111;padding:2px 6px;border-radius:2px;font-size:.82rem;color:var(--green)}
+.step{margin-bottom:15px}
+.step-num{display:inline-block;width:22px;height:22px;background:var(--green);color:#000;text-align:center;line-height:22px;border-radius:50%;font-size:.72rem;font-weight:bold;margin-right:8px}
+.step-text{font-size:.85rem}
+.warn{color:var(--yellow);font-size:.82rem;border:1px solid var(--yellow);padding:8px 14px;border-radius:3px;margin:15px 0}
+</style>
+</head>
+<body>
+
+<a href="/" class="back">← Back to GUI</a>
+
+<h1>MEPWNED DOCUMENTATION</h1>
+<span class="sub">PHANTOMIDX · Security Assessment Toolkit · 18 Tools</span>
+
+<!-- ── HOW TO USE ── -->
+<div class="usage">
+<h2>HOW TO USE</h2>
+
+<div class="step"><span class="step-num">1</span><span class="step-text">Fill the <code>Global Config</code> bar (top) with your target URL, session cookie, and CF clearance (if needed). These auto-fill into all tools.</span></div>
+<div class="step"><span class="step-num">2</span><span class="step-text">Select a tool from the sidebar. Its form will appear with pre-filled defaults.</span></div>
+<div class="step"><span class="step-num">3</span><span class="step-text">Adjust parameters as needed. Mode-specific fields will show below the mode dropdown.</span></div>
+<div class="step"><span class="step-num">4</span><span class="step-text">Click <code>▶ RUN</code>. Output streams in real-time to the terminal panel. Use <code>■ KILL</code> to abort.</span></div>
+<div class="step"><span class="step-num">5</span><span class="step-text">For EXECVEIL: after deploying a shell (POC 5), use the <code>⚡ CONNECT</code> panel to start an interactive shell session.</span></div>
+
+<div class="warn">⚠ All tools are for AUTHORIZED security assessment only. Unauthorized use violates RA 10175.</div>
+</div>
+
+<!-- ── TOOL CATEGORIES ── -->
+<div class="cat">
+<div class="cat-title" style="color:var(--red)">🔓 ACCOUNT TAKEOVER & PRIVILEGE ESCALATION</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">OVERLORD</span><span class="tc-tag">takeover · admin</span></div>
+<div class="tc-desc">Admin portal full takeover — resets passwords, dumps credentials, creates arbitrary accounts, and chains everything for full control.</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Reset any account password to 123456 (A-01, CRITICAL, NO AUTH)</li>
+<li class="crit">Mode 2 — Dump all plaintext passwords (A-02, CRITICAL, NO AUTH)</li>
+<li class="crit">Mode 3 — Create account with any role (A-03, CRITICAL, NO AUTH)</li>
+<li class="high">Mode 4 — Grant/revoke portal privilege (A-04, HIGH, NO AUTH)</li>
+<li class="high">Mode 5 — Mass account deactivation (A-05, HIGH, NO AUTH)</li>
+<li class="crit">Mode 6 — Mass account creation via fixAccountConflict (R-01, CRITICAL, NO AUTH)</li>
+<li class="high">Mode 7 — Delete sync DB records (A-07, HIGH, NO AUTH)</li>
+<li class="crit">Mode 8 — Full auto-takeover chain: reset → login → session (A-08, CRITICAL)</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">KEYHAMMER</span><span class="tc-tag">takeover · auth</span></div>
+<div class="tc-desc">Mass password reset sweep for teacher/student accounts — resets to 123456 via authenticated endpoint.</div>
+<ul class="tc-modes">
+<li class="high">Mode 1 — Single user ID reset</li>
+<li class="high">Mode 2 — Range sweep (async, concurrent)</li>
+</ul>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--magenta)">📊 GRADE MANIPULATION & ACADEMIC FRAUD</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--magenta)"></div><span class="tc-name">HYDRA</span><span class="tc-tag">grades · college</span></div>
+<div class="tc-desc">College & Principal grade exploit suite — corruption via column injection, self-approval chains, deportment overwrites.</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Unauthenticated grade corruption via /teacher/update/hps (C-01, NO AUTH)</li>
+<li class="high">Mode 2 — Modify K-12 grades as any authenticated user (C-02)</li>
+<li class="high">Mode 3 — Self-approve and post final grade (C-03)</li>
+<li class="high">Mode 4 — Remove/add subject from curriculum (C-04)</li>
+<li class="high">Mode 5 — Unauthenticated grade status submission (C-05, NO AUTH)</li>
+<li class="high">Mode 6 — Unauthenticated college grade dump (C-06, NO AUTH)</li>
+<li class="crit">Mode 7 — Unauthenticated deportment status write (PR-02/T-06, NO AUTH)</li>
+<li class="high">Mode 8 — Overwrite SF9 report card signatory (PR-04)</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">NEXUS</span><span class="tc-tag">chain · exploit</span></div>
+<div class="tc-desc">5-step grade manipulation kill chain — inflates a single student's grade from recon to permanent record.</div>
+<ul class="tc-modes">
+<li class="crit">Step 1: Find grade header → Step 2: Create grade detail → Step 3: Inflate grade → Step 4: Approve → Step 5: Post</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--green)"></div><span class="tc-name">KILLCHAIN</span><span class="tc-tag">auto · chain</span></div>
+<div class="tc-desc">Automated sweep: TRASHFIRE → REAPER → NEXUS for a named student across all sections.</div>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--magenta)"></div><span class="tc-name">REAPER</span><span class="tc-tag">recon · enum</span></div>
+<div class="tc-desc">Unauthenticated grade header recon — brute-forces section/level/subject combinations to find exploitable headers (T-07).</div>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--cyan)">📥 DATA EXFILTRATION & RECON</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--cyan)"></div><span class="tc-name">ORACLE</span><span class="tc-tag">exfil · data</span></div>
+<div class="tc-desc">Mass data exfiltration from unprotected endpoints — student financials, grades, employee PII, director dashboards.</div>
+<ul class="tc-modes">
+<li class="high">Mode 1 — Student financial data dump via mobile API (ST-03, NO AUTH)</li>
+<li class="high">Mode 2 — Student grade report card dump (ST-04, NO AUTH)</li>
+<li class="crit">Mode 3 — Employee PII dump via /passData (DR-02, NO AUTH)</li>
+<li class="crit">Mode 4 — Director finance dashboards (DR-03, NO AUTH)</li>
+<li class="crit">Mode 5 — Student database enumeration (R-02, NO AUTH)</li>
+<li class="crit">Mode 6 — Principal-only data read (PR-01, any session)</li>
+<li class="high">Mode 7 — Cross-teacher attendance manipulation (T-08)</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--cyan)"></div><span class="tc-name">CROWBAR</span><span class="tc-tag">harvest · creds</span></div>
+<div class="tc-desc">Credential rip via student portal endpoint — dumps session data and student records.</div>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--dim)"></div><span class="tc-name">SPECTER</span><span class="tc-tag">ghost · unauth</span></div>
+<div class="tc-desc">Unauthenticated PII, credential, backup, and grade-post harvester (SA-05, SA-06, A-06).</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Student PII harvest (contact numbers, addresses)</li>
+<li class="crit">Mode 2 — User credential dump (cloudNewData/users)</li>
+<li class="high">Mode 3 — Grade mass approve + post</li>
+<li class="high">Mode 4 — Trigger DB backup</li>
+<li class="high">Mode 5 — Download backup file</li>
+<li>Mode 6 — Update contact number</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--yellow)"></div><span class="tc-name">TRASHFIRE</span><span class="tc-tag">dump · unauth</span></div>
+<div class="tc-desc">Unauthenticated mastersheet mass grade dump across all sections (T-05).</div>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--red)">💀 REMOTE CODE EXECUTION</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">EXECVEIL</span><span class="tc-tag">rce · inject</span></div>
+<div class="tc-desc">Formula injection → obfuscated webshell deployment with interactive shell session (SA-04).</div>
+<ul class="tc-modes">
+<li class="crit">POC 1 — curl-based webshell download</li>
+<li class="crit">POC 2 — PowerShell webshell download</li>
+<li class="crit">POC 3 — Direct command execution via formula</li>
+<li class="crit">POC 4 — Start interactive shell session on existing shell</li>
+<li class="crit">POC 5 — Deploy ev_shell.php (obfuscated, token-protected)</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">PAYLOAD</span><span class="tc-tag">rce · upload</span></div>
+<div class="tc-desc">File upload RCE via scholarship endpoint + Registrar enrollment operations (ST-01, R-03/04/06).</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Upload PHP shell via /uploadrequirement (any session)</li>
+<li class="crit">Mode 2 — Execute commands on uploaded shell</li>
+<li class="high">Mode 3 — Unauthenticated enrollment manipulation (R-03)</li>
+<li class="high">Mode 4 — Delete academic configuration (R-04)</li>
+<li class="med">Mode 5 — Pre-registration spam (R-06)</li>
+</ul>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--yellow)">💰 FINANCIAL EXPLOITATION</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--yellow)"></div><span class="tc-name">FORGE</span><span class="tc-tag">cashier · finance</span></div>
+<div class="tc-desc">Cashier & Finance ops — process fake payments, IDOR receipt printing, void bypass without PIN.</div>
+<ul class="tc-modes">
+<li class="high">Mode 1 — Process fake payment as any user (CV2-01)</li>
+<li class="crit">Mode 2 — Print any receipt via serverPrint IDOR (CV2-02)</li>
+<li class="high">Mode 3 — Void any suspended sale IDOR (CV2-03)</li>
+<li class="crit">Mode 4 — Finance void bypass — no PIN needed (FV2-02)</li>
+<li class="crit">Mode 5 — Finance PIN brute force 0000-9999 (FV2-03)</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--yellow)"></div><span class="tc-name">LOCKPICK</span><span class="tc-tag">brute · cashier</span></div>
+<div class="tc-desc">Cashier void PIN bruteforce 0000-9999 → void any transaction (CV2-05).</div>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--red)">🔧 SQL INJECTION & SSRF</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--red)"></div><span class="tc-name">VENOM</span><span class="tc-tag">sqli · unauth</span></div>
+<div class="tc-desc">Unauthenticated raw SQL execution — dump tables, get columns, execute arbitrary queries (SA-01, SA-02).</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Dump entire table (cloudNewData)</li>
+<li class="crit">Mode 2 — Get table columns (getTableFields)</li>
+<li class="crit">Mode 3 — Dump users + plaintext passwords</li>
+<li class="crit">Mode 4 — Execute raw SQL (updatelogs)</li>
+<li class="crit">Mode 6 — SELECT exfiltration via UPDATE trick</li>
+</ul>
+</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--magenta)"></div><span class="tc-name">WRAITH</span><span class="tc-tag">ssrf · lfi</span></div>
+<div class="tc-desc">SSRF + path traversal — read .env files, arbitrary files, steal secrets (SA-03).</div>
+<ul class="tc-modes">
+<li class="crit">Mode 1 — Read .env via SSRF (Windows path)</li>
+<li class="crit">Mode 2 — Read arbitrary file via SSRF</li>
+<li class="high">Mode 3 — Path traversal download</li>
+<li class="crit">Mode 4 — Quick .env steal (auto-detects OS)</li>
+</ul>
+</div>
+</div>
+
+<div class="cat">
+<div class="cat-title" style="color:var(--cyan)">📡 COMMUNICATION ABUSE</div>
+
+<div class="tool-card">
+<div class="tc-header"><div class="tc-dot" style="background:var(--cyan)"></div><span class="tc-name">SIREN</span><span class="tc-tag">inject · unauth</span></div>
+<div class="tc-desc">Unauthenticated SMS injection — send to any phone, flood, bulk from file (ST-02).</div>
+<ul class="tc-modes">
+<li class="high">Mode 1 — Single SMS to any number (NO AUTH)</li>
+<li class="high">Mode 2 — Flood N messages to a number</li>
+<li class="high">Mode 3 — Bulk SMS from phone list file</li>
+</ul>
+</div>
+</div>
+
+<!-- ── GLOBAL CONFIG ── -->
+<div class="usage" style="margin-top:30px">
+<h2>GLOBAL CONFIGURATION</h2>
+<p><code>TARGET URL</code> — The base URL of the target application (e.g. <code>http://es_ldcu.dev</code> or <code>https://assure-prod.essentiel.ph</code>)</p>
+<p><code>SESSION COOKIE</code> — A valid <code>laravel_session</code> cookie. Obtain by logging in normally and copying from browser DevTools → Application → Cookies.</p>
+<p><code>CF CLEARANCE</code> — Required only if Cloudflare is protecting the target. Copy from browser cookies after passing the challenge.</p>
+<p style="margin-top:12px;color:var(--dim)">Global values auto-fill into all tools marked with the "global" badge. They persist in localStorage across browser sessions.</p>
+</div>
+
+<div class="usage" style="margin-top:20px">
+<h2>TIPS</h2>
+<p>• Most tools marked <span style="color:var(--red)">NO AUTH</span> work without any session cookie — just a target URL.</p>
+<p>• Output streams in real-time. Progress bars (from tqdm) animate in place.</p>
+<p>• Use VENOM mode 3 first to get all user credentials, then OVERLORD mode 8 to auto-login.</p>
+<p>• After EXECVEIL POC 5, use the shell connect panel for persistent interactive access.</p>
+<p>• ORACLE + TRASHFIRE cover most data exfiltration needs without authentication.</p>
+</div>
+
+</body>
+</html>

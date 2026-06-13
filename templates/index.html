@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MEPWNED · PHANTOMIDX</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080808;--sidebar:#0c0c0c;--panel:#0f0f0f;--card:#111;
+  --border:#1e1e1e;--border2:#2a2a2a;
+  --green:#00ff41;--cyan:#00ccff;--red:#ff4444;
+  --yellow:#ffaa00;--magenta:#cc66ff;--dim:#444;
+  --text:#ccc;--text2:#888;--text3:#555;
+  --font:'JetBrains Mono','Consolas','Courier New',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── top bar ── */
+#topbar{
+  height:42px;min-height:42px;background:var(--sidebar);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:16px;
+  flex-shrink:0;z-index:10;
+}
+#topbar .logo{color:var(--green);font-size:1.1rem;font-weight:bold;letter-spacing:4px;white-space:nowrap}
+#topbar .sub{color:var(--dim);font-size:.8rem;letter-spacing:2px}
+#topbar .spacer{flex:1}
+#topbar .global-fields{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.g-label{color:var(--text3);font-size:.75rem;letter-spacing:1px;white-space:nowrap}
+.g-input{
+  background:#0a0a0a;border:1px solid var(--border2);color:var(--text);
+  font-family:var(--font);font-size:.82rem;padding:5px 8px;border-radius:2px;width:210px;
+}
+.g-input:focus{outline:none;border-color:var(--green);color:#ddd}
+#cf-input{width:160px}
+
+/* ── layout ── */
+#layout{display:flex;flex:1;overflow:hidden}
+
+/* ── sidebar ── */
+#sidebar{
+  width:180px;min-width:180px;background:var(--sidebar);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow-y:auto;
+}
+.sidebar-section{padding:10px 0 4px;color:var(--text3);font-size:.72rem;letter-spacing:2px;padding-left:14px}
+.tool-btn{
+  display:flex;align-items:center;gap:8px;padding:8px 14px;
+  cursor:pointer;border-left:2px solid transparent;
+  transition:background .1s,border-color .1s;font-size:.85rem;
+  color:var(--text2);letter-spacing:1px;
+}
+.tool-btn:hover{background:#161616;color:var(--text)}
+.tool-btn.active{background:#161616;border-left-color:var(--tool-color,var(--green));color:#ddd}
+.tool-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--tool-color,var(--green));flex-shrink:0}
+.tool-btn .tname{flex:1}
+.tool-btn .ttag{font-size:.55rem;color:var(--text3);white-space:nowrap}
+
+/* ── main panel ── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── tool header ── */
+#tool-header{
+  padding:12px 20px 10px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:14px;flex-shrink:0;
+}
+#tool-header .tname{font-size:1.2rem;font-weight:bold;letter-spacing:3px}
+#tool-header .tdesc{font-size:.85rem;color:var(--text2);flex:1}
+#tool-header .ttag{
+  font-size:.72rem;color:var(--text3);border:1px solid var(--border2);
+  padding:3px 10px;letter-spacing:1px;
+}
+
+/* ── content area ── */
+#content{flex:1;display:flex;gap:0;overflow:hidden}
+
+/* ── form panel ── */
+#form-panel{
+  width:300px;min-width:300px;border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#form-scroll{flex:1;overflow-y:auto;padding:14px}
+.field-group{margin-bottom:10px}
+.field-label{font-size:.78rem;color:var(--text3);letter-spacing:1px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.field-label .global-badge{font-size:.65rem;color:var(--green);border:1px solid var(--green);padding:1px 5px;opacity:.7}
+.field-input{
+  width:100%;background:#0a0a0a;border:1px solid var(--border2);
+  color:var(--text);font-family:var(--font);font-size:.85rem;
+  padding:6px 10px;border-radius:2px;
+}
+.field-input:focus{outline:none;border-color:var(--tool-color,var(--green));color:#ddd}
+.field-select{
+  width:100%;background:#0a0a0a;border:1px solid var(--border2);
+  color:var(--text);font-family:var(--font);font-size:.85rem;
+  padding:6px 10px;border-radius:2px;cursor:pointer;
+}
+.field-select:focus{outline:none;border-color:var(--tool-color,var(--green))}
+
+/* ── run bar ── */
+#run-bar{
+  padding:10px 14px;border-top:1px solid var(--border);
+  display:flex;gap:8px;align-items:center;flex-shrink:0;
+}
+#btn-run{
+  flex:1;background:var(--tool-color,var(--green));color:#000;
+  border:none;font-family:var(--font);font-size:.9rem;font-weight:bold;
+  padding:8px 0;cursor:pointer;letter-spacing:2px;border-radius:2px;
+  transition:opacity .15s;
+}
+#btn-run:disabled{opacity:.35;cursor:not-allowed}
+#btn-run:hover:not(:disabled){opacity:.85}
+#btn-kill{
+  background:transparent;border:1px solid var(--red);color:var(--red);
+  font-family:var(--font);font-size:.85rem;padding:8px 14px;cursor:pointer;
+  border-radius:2px;letter-spacing:1px;display:none;
+}
+#btn-kill:hover{background:var(--red);color:#000}
+#btn-clear{
+  background:transparent;border:1px solid var(--border2);color:var(--text3);
+  font-family:var(--font);font-size:.85rem;padding:8px 12px;cursor:pointer;
+  border-radius:2px;
+}
+#btn-clear:hover{border-color:var(--text2);color:var(--text)}
+
+/* ── terminal panel ── */
+#term-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#term-header{
+  padding:6px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+#term-title{font-size:.78rem;color:var(--text3);letter-spacing:2px;flex:1}
+#term-status{font-size:.75rem;padding:3px 10px;border-radius:2px;background:#111;color:var(--dim);border:1px solid var(--border)}
+#term-status.running{color:var(--green);border-color:var(--green);animation:pulse 1.2s infinite}
+#term-status.done{color:var(--dim);border-color:var(--border)}
+#term-status.error{color:var(--red);border-color:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+#term-output{
+  flex:1;overflow-y:auto;padding:12px 14px;
+  font-size:.88rem;line-height:1.7;
+  background:#000;
+}
+#term-output .line{white-space:pre-wrap;word-break:break-all}
+#term-output .line.empty{height:.8em}
+
+/* ── shell terminal ── */
+#shell-panel{
+  display:none;flex-direction:column;overflow:hidden;
+  border-top:1px solid var(--border);flex-shrink:0;height:280px;
+}
+#shell-panel.visible{display:flex}
+#shell-header{
+  padding:6px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+  background:#0a0a0a;
+}
+#shell-title{font-size:.78rem;color:var(--text3);letter-spacing:2px;flex:1}
+#shell-connected{font-size:.78rem;color:var(--green)}
+#shell-output{
+  flex:1;overflow-y:auto;padding:8px 14px;
+  font-size:.88rem;line-height:1.65;background:#000;color:var(--green);
+}
+.shell-line{white-space:pre-wrap;word-break:break-all}
+.shell-line.cmd{color:var(--yellow)}
+.shell-line.err{color:var(--red)}
+.shell-line.sys{color:var(--dim)}
+#shell-input-bar{
+  display:flex;align-items:center;border-top:1px solid var(--border);
+  background:#0a0a0a;flex-shrink:0;
+}
+#shell-prompt{padding:0 10px;color:var(--green);font-size:.88rem;white-space:nowrap;flex-shrink:0}
+#shell-cmd{
+  flex:1;background:transparent;border:none;color:var(--green);
+  font-family:var(--font);font-size:.88rem;padding:9px 4px;
+  outline:none;caret-color:var(--green);
+}
+#shell-close{
+  padding:0 12px;color:var(--text3);font-size:.8rem;cursor:pointer;
+  border-left:1px solid var(--border);height:100%;display:flex;align-items:center;
+}
+#shell-close:hover{color:var(--red)}
+
+/* ── execveil shell connect form ── */
+#ev-connect{
+  display:none;padding:10px 14px;border-top:1px solid var(--border);
+  background:#0a0a0a;flex-shrink:0;
+}
+#ev-connect.visible{display:block}
+#ev-connect-row{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap}
+#ev-connect-row .field-group{margin:0;flex:1;min-width:120px}
+#btn-connect{
+  background:transparent;border:1px solid var(--cyan);color:var(--cyan);
+  font-family:var(--font);font-size:.82rem;padding:6px 14px;
+  cursor:pointer;border-radius:2px;white-space:nowrap;
+}
+#btn-connect:hover{background:var(--cyan);color:#000}
+
+/* ── scrollbar ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#222;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#333}
+
+/* ── misc ── */
+.welcome{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;color:var(--text3);gap:6px;
+}
+.welcome pre{font-size:.7rem;line-height:1.3;color:#1a1a1a}
+</style>
+</head>
+<body>
+
+<!-- ── top bar ── -->
+<div id="topbar">
+  <span class="logo">MEPWNED</span>
+  <span class="sub">· PHANTOMIDX ·</span>
+  <a href="/docs" target="_blank" style="color:var(--dim);font-size:.75rem;border:1px solid var(--border);padding:3px 10px;border-radius:2px;text-decoration:none;letter-spacing:1px" onmouseover="this.style.color='var(--cyan)';this.style.borderColor='var(--cyan)'" onmouseout="this.style.color='var(--dim)';this.style.borderColor='var(--border)'">? DOCS</a>
+  <div class="spacer"></div>
+  <div class="global-fields">
+    <span class="g-label">URL</span>
+    <input id="g-url"     class="g-input" type="url"      placeholder="https://target.dev" oninput="syncGlobal()">
+    <span class="g-label">SESSION</span>
+    <input id="g-session" class="g-input" type="password" placeholder="laravel_session cookie" oninput="syncGlobal()">
+    <span class="g-label">CF</span>
+    <input id="g-cf"      class="g-input" id="cf-input" type="password" placeholder="cf_clearance (opt)" oninput="syncGlobal()">
+  </div>
+</div>
+
+<!-- ── layout ── -->
+<div id="layout">
+
+  <!-- sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-section">TOOLS</div>
+    {% for t in tools %}
+    <div class="tool-btn" id="btn-{{t.id}}" style="--tool-color:{{t.color}}"
+         onclick="selectTool('{{t.id}}')">
+      <div class="dot"></div>
+      <span class="tname">{{t.name}}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- main -->
+  <div id="main">
+
+    <!-- tool header -->
+    <div id="tool-header">
+      <span id="th-name" class="tname" style="color:var(--green)">SELECT A TOOL</span>
+      <span id="th-desc" class="tdesc">choose a tool from the sidebar to begin</span>
+      <span id="th-tag"  class="ttag">—</span>
+    </div>
+
+    <!-- content -->
+    <div id="content">
+
+      <!-- form panel -->
+      <div id="form-panel">
+        <div id="form-scroll">
+          <div class="welcome">
+            <pre>
+ ╔══════════════════╗
+ ║  PHANTOMIDX GUI  ║
+ ╚══════════════════╝</pre>
+            <span style="font-size:.7rem">← select a tool</span>
+          </div>
+        </div>
+        <div id="run-bar">
+          <button id="btn-run"  onclick="runTool()"  disabled>▶ RUN</button>
+          <button id="btn-kill" onclick="killTool()">■ KILL</button>
+          <button id="btn-clear" onclick="clearOutput()">✕</button>
+        </div>
+      </div>
+
+      <!-- terminal + shell panel -->
+      <div id="term-panel">
+        <div id="term-header">
+          <span id="term-title">OUTPUT</span>
+          <span id="term-status">idle</span>
+        </div>
+        <div id="term-output"></div>
+
+        <!-- execveil shell connect -->
+        <div id="ev-connect">
+          <div style="font-size:.62rem;color:var(--text3);margin-bottom:6px;letter-spacing:1px">SHELL SESSION — connect to deployed ev_shell</div>
+          <div id="ev-connect-row">
+            <div class="field-group">
+              <div class="field-label">Shell URL path</div>
+              <input class="field-input" id="ev-path"  value="/ev.php">
+            </div>
+            <div class="field-group">
+              <div class="field-label">Token</div>
+              <input class="field-input" id="ev-token" value="evshell">
+            </div>
+            <button id="btn-connect" onclick="connectShell()">⚡ CONNECT</button>
+          </div>
+        </div>
+
+        <!-- interactive shell -->
+        <div id="shell-panel">
+          <div id="shell-header">
+            <span id="shell-title">SHELL</span>
+            <span id="shell-connected"></span>
+            <span id="shell-close" onclick="closeShell()">✕ close</span>
+          </div>
+          <div id="shell-output"></div>
+          <div id="shell-input-bar">
+            <span id="shell-prompt">┌─[shell]<br>└──╼ $&nbsp;</span>
+            <input id="shell-cmd" autocomplete="off" spellcheck="false"
+                   placeholder="type a command..."
+                   onkeydown="if(event.key==='Enter') sendShellCmd()">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── tool definitions (from Flask) ──────────────────────────────────────────
+const TOOLS = {{ tools | tojson }};
+const TOOL_MAP = {};
+TOOLS.forEach(t => TOOL_MAP[t.id] = t);
+
+let currentTool = null;
+let currentSSE  = null;
+let isRunning   = false;
+const cmdHistory = [];
+let histIdx = -1;
+
+// ── global config sync ──────────────────────────────────────────────────────
+function syncGlobal() {
+  const url = document.getElementById('g-url').value;
+  const ses = document.getElementById('g-session').value;
+  const cf  = document.getElementById('g-cf').value;
+  // push into all visible global fields
+  document.querySelectorAll('[data-global="base_url"]').forEach(el => { if(!el._dirty) el.value = url; });
+  document.querySelectorAll('[data-global="session"]').forEach(el => { if(!el._dirty) el.value = ses; });
+  document.querySelectorAll('[data-global="cf"]').forEach(el => { if(!el._dirty) el.value = cf; });
+  // also update shell connect fields
+  if(document.getElementById('ev-token') && !document.getElementById('ev-token')._dirty)
+    document.getElementById('ev-token').value = TOOL_MAP['execveil'] ?
+      (document.querySelector('[data-id="token"]')?.value || 'evshell') : 'evshell';
+}
+
+// ── select tool ──────────────────────────────────────────────────────────────
+function selectTool(id) {
+  if(isRunning) return;
+  currentTool = TOOL_MAP[id];
+
+  // sidebar active state
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-'+id)?.classList.add('active');
+
+  // header
+  document.getElementById('th-name').textContent  = currentTool.name;
+  document.getElementById('th-name').style.color  = currentTool.color;
+  document.getElementById('th-desc').textContent  = currentTool.desc;
+  document.getElementById('th-tag').textContent   = currentTool.tag;
+
+  // set tool color var
+  document.getElementById('main').style.setProperty('--tool-color', currentTool.color);
+
+  buildForm(currentTool);
+
+  document.getElementById('btn-run').disabled = false;
+  document.getElementById('btn-run').textContent = '▶ RUN ' + currentTool.name;
+
+  // show/hide execveil shell connect
+  const evConnect = document.getElementById('ev-connect');
+  evConnect.classList.toggle('visible', id === 'execveil');
+
+  clearOutput();
+}
+
+// ── build form ────────────────────────────────────────────────────────────────
+function buildForm(tool) {
+  const scroll = document.getElementById('form-scroll');
+  if(!tool.fields || tool.fields.length === 0) {
+    scroll.innerHTML = '<div style="padding:20px;color:var(--text3);font-size:.72rem">No inputs required — just hit RUN.</div>';
+    return;
+  }
+
+  const gUrl = document.getElementById('g-url').value;
+  const gSes = document.getElementById('g-session').value;
+  const gCf  = document.getElementById('g-cf').value;
+
+  let html = '';
+  for(const f of tool.fields) {
+    let val = f.default || '';
+    if(f.global && f.id === 'base_url') val = gUrl || val;
+    if((f.global || f.id === 'session') && (f.id === 'session')) val = gSes || val;
+    if(f.global_cf || f.id === 'cf') val = gCf || val;
+
+    html += `<div class="field-group">`;
+    html += `<div class="field-label">${f.label}`;
+    if(f.global || f.global_cf) html += `<span class="global-badge">global</span>`;
+    html += `</div>`;
+
+    if(f.type === 'select') {
+      const opts = f.options || [];
+      const labels = f.option_labels || opts;
+      html += `<select class="field-select" data-id="${f.id}"`;
+      if(f.global) html += ` data-global="${f.id}"`;
+      html += `>`;
+      opts.forEach((o,i) => {
+        html += `<option value="${o}"${o===val?' selected':''}>${labels[i]||o}</option>`;
+      });
+      html += `</select>`;
+      if(f.id === 'mode' || f.id === 'poc') {
+        html += `</div>`;
+        html += buildDependentFields(tool, f);
+        break;
+      }
+    } else {
+      html += `<input class="field-input" type="${f.type}" data-id="${f.id}"`;
+      if(f.global) html += ` data-global="${f.id}"`;
+      html += ` value="${escHtml(val)}" placeholder="${escHtml(f.label)}"`;
+      html += ` oninput="this._dirty=true">`;
+    }
+    html += `</div>`;
+  }
+  scroll.innerHTML = html;
+
+  // mode/poc field change → rebuild dependent fields visibility
+  const modeEl = scroll.querySelector('[data-id="mode"],[data-id="poc"]');
+  if(modeEl) {
+    modeEl.addEventListener('change', () => updateDependentVisibility(tool));
+    updateDependentVisibility(tool);
+  }
+}
+
+function buildDependentFields(tool, modeField) {
+  // returns HTML for the dependent section div
+  let html = `<div id="dep-fields">`;
+  // render all remaining fields (after mode/poc) in a container
+  let pastMode = false;
+  for(const f of tool.fields) {
+    if(f.id === modeField.id) { pastMode = true; continue; }
+    if(!pastMode) continue;
+    const gUrl = document.getElementById('g-url').value;
+    const gSes = document.getElementById('g-session').value;
+    const gCf  = document.getElementById('g-cf').value;
+    let val = f.default || '';
+    if(f.global && f.id === 'base_url') val = gUrl || val;
+    if((f.global || f.id === 'session') && f.id === 'session') val = gSes || val;
+    if(f.global_cf || f.id === 'cf') val = gCf || val;
+
+    html += `<div class="field-group dep-field" data-for="${f.id}">`;
+    html += `<div class="field-label">${f.label}`;
+    if(f.global || f.global_cf) html += `<span class="global-badge">global</span>`;
+    html += `</div>`;
+    if(f.type === 'select') {
+      const opts = f.options || [];
+      const labels = f.option_labels || opts;
+      html += `<select class="field-select" data-id="${f.id}">`;
+      opts.forEach((o,i) => html += `<option value="${o}"${o===val?' selected':''}>${labels[i]||o}</option>`);
+      html += `</select>`;
+    } else {
+      html += `<input class="field-input" type="${f.type}" data-id="${f.id}"`;
+      if(f.global) html += ` data-global="${f.id}"`;
+      html += ` value="${escHtml(val)}" placeholder="${escHtml(f.label)}" oninput="this._dirty=true">`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function updateDependentVisibility(tool) {
+  // show/hide dep-fields based on mode value
+  // for now show all — backend handles which values to use
+}
+
+// ── get form data ─────────────────────────────────────────────────────────────
+function getFormData() {
+  const data = {};
+  document.querySelectorAll('#form-scroll [data-id]').forEach(el => {
+    data[el.dataset.id] = el.value;
+  });
+  return data;
+}
+
+// ── run tool ──────────────────────────────────────────────────────────────────
+function runTool() {
+  if(!currentTool || isRunning) return;
+  const data = getFormData();
+  setRunning(true);
+  clearOutput();
+  appendLine(`<span style="color:var(--dim)">▶ ${currentTool.name} starting...</span>`);
+
+  currentSSE = new EventSource(`/api/run/${currentTool.id}?_=${Date.now()}`);
+
+  // We need POST, so use fetch + readable stream instead of EventSource
+  currentSSE.close();
+  currentSSE = null;
+
+  const out = document.getElementById('term-output');
+  const ctrl = new AbortController();
+  window._abortCtrl = ctrl;
+
+  fetch(`/api/run/${currentTool.id}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data),
+    signal: ctrl.signal,
+  }).then(resp => {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    function read() {
+      reader.read().then(({done, value}) => {
+        if(done) { setRunning(false); return; }
+        buf += decoder.decode(value, {stream:true});
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for(const part of parts) {
+          if(!part.startsWith('data:')) continue;
+          const payload = part.slice(5).trim();
+          try {
+            const line = JSON.parse(payload);
+            if(line === '__DONE__') { setRunning(false); return; }
+            appendLine(`<span class="line">${line}</span>`);
+          } catch(e) {}
+        }
+        read();
+      }).catch(() => setRunning(false));
+    }
+    read();
+  }).catch(err => {
+    if(err.name !== 'AbortError') appendLine(`<span style="color:var(--red)">[!] ${err}</span>`);
+    setRunning(false);
+  });
+}
+
+function killTool() {
+  if(window._abortCtrl) window._abortCtrl.abort();
+  if(currentTool) {
+    fetch(`/api/kill/${currentTool.id}`, {method:'POST'});
+  }
+  setRunning(false);
+  appendLine('<span style="color:var(--red)">■ killed by user</span>');
+}
+
+function setRunning(v) {
+  isRunning = v;
+  const st = document.getElementById('term-status');
+  const killBtn = document.getElementById('btn-kill');
+  const runBtn  = document.getElementById('btn-run');
+  if(v) {
+    st.textContent = '● running'; st.className = 'running';
+    killBtn.style.display = 'block';
+    runBtn.disabled = true;
+  } else {
+    st.textContent = 'done'; st.className = 'done';
+    killBtn.style.display = 'none';
+    runBtn.disabled = false;
+  }
+}
+
+// ── terminal output ───────────────────────────────────────────────────────────
+let _lastIsProgress = false;
+
+function appendLine(html) {
+  const out = document.getElementById('term-output');
+  // Detect tqdm-style progress lines (contain ██ or %|)
+  const isProgress = /█|%\||\d+%/.test(html);
+  if(isProgress && _lastIsProgress && out.lastElementChild) {
+    // overwrite the last line (simulates \r behavior)
+    out.lastElementChild.innerHTML = html;
+  } else {
+    const div = document.createElement('div');
+    div.className = 'line';
+    div.innerHTML = html;
+    out.appendChild(div);
+    _lastIsProgress = isProgress;
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+function clearOutput() {
+  document.getElementById('term-output').innerHTML = '';
+  document.getElementById('term-status').textContent = 'idle';
+  document.getElementById('term-status').className = '';
+  _lastIsProgress = false;
+}
+
+// ── shell session ─────────────────────────────────────────────────────────────
+function connectShell() {
+  const path   = document.getElementById('ev-path').value || '/ev.php';
+  const token  = document.getElementById('ev-token').value || 'evshell';
+  const url    = document.getElementById('g-url').value;
+  const cookie = document.getElementById('g-session').value;
+  const cf     = document.getElementById('g-cf').value;
+
+  fetch('/api/shell/connect', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url, path, token, cookie, cf})
+  }).then(r=>r.json()).then(d => {
+    if(d.connected) {
+      document.getElementById('shell-panel').classList.add('visible');
+      document.getElementById('shell-connected').textContent = d.endpoint;
+      document.getElementById('shell-title').textContent = `SHELL  ·  ${token}`;
+      shellLog(`connected → ${d.endpoint}`, 'sys');
+      document.getElementById('shell-cmd').focus();
+    }
+  });
+}
+
+function closeShell() {
+  document.getElementById('shell-panel').classList.remove('visible');
+  document.getElementById('shell-output').innerHTML = '';
+}
+
+function sendShellCmd() {
+  const el  = document.getElementById('shell-cmd');
+  const cmd = el.value.trim();
+  if(!cmd) return;
+  el.value = '';
+  cmdHistory.unshift(cmd); histIdx = -1;
+  if(cmd === 'clear') { document.getElementById('shell-output').innerHTML=''; return; }
+  shellLog(cmd, 'cmd');
+  fetch('/api/shell/exec', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cmd})
+  }).then(r=>r.json()).then(d => {
+    if(d.out) shellLog(d.out, d.error ? 'err' : '');
+    if(d.code !== undefined && d.code !== 0) shellLog(`exit ${d.code}`, 'sys');
+  }).catch(e => shellLog(String(e), 'err'));
+}
+
+// shell history navigation
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('shell-cmd').addEventListener('keydown', e => {
+    if(e.key==='ArrowUp'){ e.preventDefault(); histIdx=Math.min(histIdx+1,cmdHistory.length-1); document.getElementById('shell-cmd').value=cmdHistory[histIdx]||''; }
+    if(e.key==='ArrowDown'){ e.preventDefault(); histIdx=Math.max(histIdx-1,-1); document.getElementById('shell-cmd').value=histIdx<0?'':cmdHistory[histIdx]; }
+  });
+});
+
+function shellLog(text, cls='') {
+  const out = document.getElementById('shell-output');
+  const div = document.createElement('div');
+  div.className = 'shell-line ' + cls;
+  div.textContent = text;
+  out.appendChild(div);
+  out.scrollTop = out.scrollHeight;
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// restore globals from localStorage
+(function(){
+  const saved = JSON.parse(localStorage.getItem('mp_global')||'{}');
+  if(saved.url)     document.getElementById('g-url').value     = saved.url;
+  if(saved.session) document.getElementById('g-session').value = saved.session;
+  if(saved.cf)      document.getElementById('g-cf').value      = saved.cf;
+})();
+
+// persist globals on change
+['g-url','g-session','g-cf'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    localStorage.setItem('mp_global', JSON.stringify({
+      url:     document.getElementById('g-url').value,
+      session: document.getElementById('g-session').value,
+      cf:      document.getElementById('g-cf').value,
+    }));
+  });
+});
+</script>
+</body>
+</html>
