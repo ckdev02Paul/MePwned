@@ -342,6 +342,20 @@ TOOLS = [
     ],
     "stdin": None,
   },
+  { "id": "autoscan", "name": "AUTOSCAN",  "color": "#3fb950", "tag": "verify · all",
+    "desc": "Automated security verification — tests all findings from Unified Report, outputs pass/fail matrix",
+    "script": "autoscan.py",
+    "special": "autoscan",
+    "fields": [
+      {"id":"base_url",    "label":"Target URL",        "type":"url",      "default":"", "global":True},
+      {"id":"email",       "label":"Email / Username",  "type":"text",     "default":""},
+      {"id":"password",    "label":"Password",          "type":"password", "default":""},
+      {"id":"session",     "label":"Session (or auto-login above)", "type":"password", "default":"", "global":True},
+      {"id":"concurrency", "label":"Concurrency",       "type":"number",   "default":"10"},
+      {"id":"timeout",     "label":"Timeout (sec)",     "type":"number",   "default":"10"},
+    ],
+    "stdin": None,
+  },
 ]
 
 TOOL_MAP = {t["id"]: t for t in TOOLS}
@@ -351,6 +365,9 @@ TOOL_MAP = {t["id"]: t for t in TOOLS}
 def build_stdin(tool_id, data):
     tool = TOOL_MAP[tool_id]
     special = tool.get("special")
+
+    if special == "autoscan":
+        return ""  # autoscan uses CLI args, not stdin
 
     if special == "execveil":
         poc    = data.get("poc", "5")
@@ -571,11 +588,28 @@ def run_tool(tool_id):
 
     data    = request.get_json() or {}
     script  = os.path.join(CLI, tool["script"])
-    stdin_s = build_stdin(tool_id, data)
+
+    # AUTOSCAN uses CLI args instead of stdin
+    if tool.get("special") == "autoscan":
+        cmd_args = [sys.executable, "-u", script,
+                    "--url", data.get("base_url", ""),
+                    "--concurrency", str(data.get("concurrency", "10")),
+                    "--timeout", str(data.get("timeout", "10")),
+                    "--quiet"]
+        if data.get("session"):
+            cmd_args += ["--session", data["session"]]
+        if data.get("email"):
+            cmd_args += ["--email", data["email"]]
+        if data.get("password"):
+            cmd_args += ["--password", data["password"]]
+        stdin_s = ""
+    else:
+        cmd_args = [sys.executable, "-u", script]
+        stdin_s = build_stdin(tool_id, data)
 
     def generate():
         proc = subprocess.Popen(
-            [sys.executable, "-u", script],
+            cmd_args,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, cwd=CLI,
             bufsize=0,
@@ -586,8 +620,9 @@ def run_tool(tool_id):
 
         # feed all stdin upfront
         try:
-            proc.stdin.write(stdin_s.encode())
-            proc.stdin.flush()
+            if stdin_s:
+                proc.stdin.write(stdin_s.encode())
+                proc.stdin.flush()
             proc.stdin.close()
         except Exception:
             pass
@@ -674,6 +709,101 @@ def shell_exec():
             return jsonify({"out": buf, "code": r.status_code})
     except Exception as e:
         return jsonify({"out": str(e), "code": -1, "error": True})
+
+# ── AUTOSCAN API (structured JSON result) ─────────────────────────────────────
+
+@app.route("/api/autoscan", methods=["POST"])
+def api_autoscan():
+    """Run autoscan and return structured JSON report (non-streaming)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("autoscan", os.path.join(CLI, "autoscan.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    data = request.get_json() or {}
+    base_url = data.get("base_url", "").strip().rstrip("/")
+    session_cookie = data.get("session", "")
+    email = data.get("email", "")
+    password = data.get("password", "")
+    concurrency = int(data.get("concurrency", 10))
+    timeout_sec = int(data.get("timeout", 10))
+
+    if not base_url:
+        return jsonify({"error": "base_url required"}), 400
+
+    import asyncio as _aio
+
+    async def _run():
+        scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec)
+        # Auto-login if credentials provided and no session
+        login_result = None
+        if email and password and not session_cookie:
+            ok, msg = await scanner.auto_login(email, password)
+            login_result = {"success": ok, "message": msg}
+        await scanner.run_all()
+        report = scanner.build_report()
+        return report, login_result
+
+    loop = _aio.new_event_loop()
+    try:
+        report, login_result = loop.run_until_complete(_run())
+    finally:
+        loop.close()
+
+    from dataclasses import asdict as _asdict
+    report_dict = _asdict(report)
+    if login_result:
+        report_dict["login"] = login_result
+    return jsonify(report_dict)
+
+
+@app.route("/api/autoscan/stream", methods=["POST"])
+def api_autoscan_stream():
+    """Run autoscan with SSE streaming (one event per test result)."""
+    data = request.get_json() or {}
+    base_url = data.get("base_url", "").strip().rstrip("/")
+    session_cookie = data.get("session", "")
+    concurrency = int(data.get("concurrency", 10))
+    timeout_sec = int(data.get("timeout", 10))
+
+    if not base_url:
+        return jsonify({"error": "base_url required"}), 400
+
+    def generate():
+        import importlib.util, asyncio as _aio
+        spec = importlib.util.spec_from_file_location("autoscan", os.path.join(CLI, "autoscan.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        results_queue = []
+
+        def on_result(r):
+            from dataclasses import asdict as _ad
+            results_queue.append(_ad(r))
+
+        async def _run():
+            scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec)
+            await scanner.run_all(progress_cb=on_result)
+            return scanner.build_report()
+
+        loop = _aio.new_event_loop()
+        try:
+            report = loop.run_until_complete(_run())
+        finally:
+            loop.close()
+
+        # Emit each result
+        from dataclasses import asdict as _ad
+        for r in results_queue:
+            yield f"data: {json.dumps({'type': 'result', 'data': r})}\n\n"
+
+        # Emit final summary
+        yield f"data: {json.dumps({'type': 'complete', 'data': _ad(report)})}\n\n"
+
+    return Response(stream_with_context(generate()),
+                    content_type="text/event-stream",
+                    headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
 
 if __name__ == "__main__":
     print("\033[92m[+]\033[0m MEPWNED GUI starting → http://127.0.0.1:5000\n")

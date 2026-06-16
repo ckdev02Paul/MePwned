@@ -122,6 +122,13 @@ TOOLS = [
         "color": GREEN,
         "tag":   "docs   / ref",
     },
+    {
+        "name":  "AUTOSCAN",
+        "desc":  "automated security verification (all findings)",
+        "path":  os.path.abspath("autoscan.py"),
+        "color": GREEN,
+        "tag":   "verify / all",
+    },
 ]
 
 _running = False
