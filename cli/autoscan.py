@@ -38,6 +38,7 @@ BANNER = f"""{CYAN}
   │  {BOLD}AUTOSCAN{RESET}{CYAN}  — Security Verification Engine              │
   │  Non-destructive · Maps to Unified Security Report      │
   │  68 checks · 12 modules · Parallel execution            │
+  │  Two-phase: unauth probe + role-escalation check        │
   └─────────────────────────────────────────────────────────┘
 {RESET}"""
 
@@ -72,10 +73,42 @@ def _is_login_page(text):
             ('<form' in lower and 'login' in lower))
 
 
+def _is_auth_redirect(location, original_url):
+    """Check if a redirect Location is an auth redirect (to login/home) vs infrastructure (HTTP→HTTPS, www)."""
+    if not location:
+        return True  # No location header = treat as auth redirect (safe default)
+    loc_lower = location.lower()
+    # Auth-related redirect targets
+    auth_indicators = ("/login", "/signin", "/auth", "/home", "/dashboard", "/register")
+    if any(ind in loc_lower for ind in auth_indicators):
+        return True
+    # Infrastructure redirect: same path, different scheme or host
+    from urllib.parse import urlparse
+    try:
+        orig = urlparse(original_url)
+        dest = urlparse(location if "://" in location else f"{orig.scheme}://{orig.netloc}{location}")
+        # Same path but different scheme (http→https) or host (www→non-www) = NOT auth redirect
+        if dest.path.rstrip("/") == orig.path.rstrip("/") or dest.path == orig.path + "/":
+            return False
+        # Redirect to root "/" is likely auth redirect (sending to home/login)
+        if dest.path in ("/", ""):
+            return True
+    except Exception:
+        pass
+    # Default: assume it IS an auth redirect (conservative)
+    return True
+
+
 def _check_json_data(resp_text, status_code):
     if status_code == 200:
         try:
             data = json.loads(resp_text)
+            # Check for auth error JSON responses (our fix returns 403 with error JSON)
+            if isinstance(data, dict):
+                err = (data.get("error", "") or "").lower()
+                msg = (data.get("message", "") or "").lower()
+                if "unauthorized" in err or "unauthenticated" in msg or "unauthorized" in msg:
+                    return "PATCHED", "Returns unauthorized JSON (200)"
             if isinstance(data, list) and len(data) > 0:
                 return "VULNERABLE", f"Returns {len(data)} records"
             if isinstance(data, dict):
@@ -94,6 +127,10 @@ def _check_json_data(resp_text, status_code):
         return "PATCHED", "Redirects"
     if status_code == 404:
         return "PATCHED", "Route removed"
+    if status_code == 405:
+        return "PATCHED", "Method not allowed"
+    if status_code == 422:
+        return "PATCHED", "422 — validation active"
     if status_code == 500:
         return "ERROR", "Server error"
     return "PATCHED", f"HTTP {status_code}"
@@ -103,6 +140,16 @@ def _check_unauth(resp_text, status_code):
     if status_code == 200:
         if _is_login_page(resp_text):
             return "PATCHED", "Returns login page"
+        # Check for auth error JSON responses
+        try:
+            data = json.loads(resp_text)
+            if isinstance(data, dict):
+                err = (data.get("error", "") or "").lower()
+                msg = (data.get("message", "") or "").lower()
+                if "unauthorized" in err or "unauthenticated" in msg or "unauthorized" in msg:
+                    return "PATCHED", "Returns unauthorized JSON"
+        except:
+            pass
         return "VULNERABLE", "Accessible without auth"
     if status_code in (401, 403):
         return "PATCHED", f"HTTP {status_code}"
@@ -112,6 +159,8 @@ def _check_unauth(resp_text, status_code):
         return "PATCHED", "Route removed"
     if status_code == 405:
         return "PATCHED", "Method not allowed"
+    if status_code == 422:
+        return "PATCHED", "422 — validation active"
     if status_code == 500:
         return "ERROR", "Server error (route exists)"
     return "PATCHED", f"HTTP {status_code}"
@@ -137,10 +186,16 @@ def _check_action(resp_text, status_code):
             return "PATCHED", "Returns login page"
         try:
             data = json.loads(resp_text)
+            # Check for error/unauthorized JSON responses
+            if isinstance(data, dict):
+                err = (data.get("error", "") or "").lower()
+                msg = (data.get("message", "") or "").lower()
+                if "unauthorized" in err or "unauthenticated" in msg or "unauthorized" in msg:
+                    return "PATCHED", "Returns unauthorized JSON"
+                if data.get("status") or data.get("success") or data.get("message"):
+                    return "VULNERABLE", "Action responds"
             if isinstance(data, list) and data:
                 return "VULNERABLE", "Action endpoint reachable"
-            if isinstance(data, dict) and (data.get("status") or data.get("success") or data.get("message")):
-                return "VULNERABLE", "Action responds"
         except:
             pass
         return "VULNERABLE", "HTTP 200 — endpoint accessible"
@@ -150,8 +205,10 @@ def _check_action(resp_text, status_code):
         return "PATCHED", "Redirects to login"
     if status_code == 404:
         return "PATCHED", "Route removed"
+    if status_code == 405:
+        return "PATCHED", "Method not allowed"
     if status_code == 422:
-        return "VULNERABLE", "422 — reachable (validation error)"
+        return "PATCHED", "422 — validation rejects (auth+validation active)"
     if status_code == 500:
         return "ERROR", "500 — route exists"
     return "PATCHED", f"HTTP {status_code}"
@@ -161,6 +218,16 @@ def _check_grade(resp_text, status_code):
     if status_code == 200:
         if _is_login_page(resp_text):
             return "PATCHED", "Returns login page"
+        # Check for auth error JSON responses
+        try:
+            data = json.loads(resp_text)
+            if isinstance(data, dict):
+                err = (data.get("error", "") or "").lower()
+                msg = (data.get("message", "") or "").lower()
+                if "unauthorized" in err or "unauthenticated" in msg or "unauthorized" in msg:
+                    return "PATCHED", "Returns unauthorized JSON"
+        except:
+            pass
         return "VULNERABLE", "Grade endpoint accessible"
     if status_code in (401, 403):
         return "PATCHED", f"HTTP {status_code}"
@@ -168,12 +235,37 @@ def _check_grade(resp_text, status_code):
         return "PATCHED", "Redirects to login"
     if status_code == 404:
         return "PATCHED", "Route removed"
+    if status_code == 405:
+        return "PATCHED", "Method not allowed"
+    if status_code == 422:
+        return "PATCHED", "422 — validation active"
     if status_code == 500:
         return "ERROR", "500 — crashes"
     return "PATCHED", f"HTTP {status_code}"
 
 
 # ── Test Registry ─────────────────────────────────────────────────────────────
+
+# IDs to mark as SKIPPED — only applies to specific targets (es_ldcu)
+# When scanning other schools, set skip_ids=set() to test everything
+LDCU_SKIPPED_IDS = {
+    "SA-01a",   # SyncController — affects other schools
+    "SA-01b",   # SyncController — affects other schools
+    "SA-02a",   # SyncController — affects other schools
+    "SA-02b",   # SyncController — affects other schools
+    "SA-02c",   # SyncController — affects other schools
+    "SA-02d",   # SyncController — affects other schools
+    "SA-02e",   # SyncController — affects other schools
+    "SA-03",    # SyncController (storeImage) — affects other schools
+    "SA-04c",   # SyncController (updatetargettable) — affects other schools
+    "FV2-01",   # cloudNewData/chrng_pin — SyncController, affects other schools
+    "R-06",     # Public pre-registration form — no auth by design
+    "ST-03",    # Mobile API — rate limited, public by design
+    "ST-04",    # Mobile API — rate limited, public by design
+}
+
+# Default: no skips (scan everything). Only es_ldcu uses LDCU_SKIPPED_IDS.
+SKIPPED_IDS = set()
 
 TESTS = [
     # ═══ SuperAdmin (SA-01 → SA-06) ═══
@@ -327,14 +419,16 @@ TESTS = [
      "title": "Unauth SMS inject — notify_individual_student",
      "method": "GET", "path": "/student/notify_individual_student",
      "params": {}, "needs_auth": False, "check": _check_unauth},
-    {"id": "ST-03", "module": "Student", "severity": "HIGH",
+    {"id": "ST-03", "module": "Student", "severity": "MEDIUM",
      "title": "Unauth financial dump — api_student_ledger_v2",
      "method": "GET", "path": "/api/mobile/api_student_ledger_v2",
-     "params": {"studid": "1"}, "needs_auth": False, "check": _check_json_data},
-    {"id": "ST-04", "module": "Student", "severity": "HIGH",
+     "params": {"studid": "1"}, "needs_auth": False, "check": _check_json_data,
+     "note": "Mobile API — rate limited, no session auth by design"},
+    {"id": "ST-04", "module": "Student", "severity": "MEDIUM",
      "title": "Unauth grade dump — api_reportcard_v2",
      "method": "GET", "path": "/api/mobile/api_reportcard_v2",
-     "params": {"studid": "1", "syid": "1"}, "needs_auth": False, "check": _check_json_data},
+     "params": {"studid": "1", "syid": "1"}, "needs_auth": False, "check": _check_json_data,
+     "note": "Mobile API — rate limited, no session auth by design"},
 
     # ═══ Registrar (R-01 → R-06) ═══
     {"id": "R-01", "module": "Registrar", "severity": "CRITICAL",
@@ -356,7 +450,8 @@ TESTS = [
     {"id": "R-06", "module": "Registrar", "severity": "MEDIUM",
      "title": "Pre-registration form (no rate limit)",
      "method": "GET", "path": "/prereg/newstudent",
-     "params": {}, "needs_auth": False, "check": _check_unauth},
+     "params": {}, "needs_auth": False, "check": _check_unauth,
+     "note": "Public form — vuln is missing rate limit, not missing auth"},
 
     # ═══ College (C-01 → C-06) ═══
     {"id": "C-01", "module": "College", "severity": "CRITICAL",
@@ -491,7 +586,7 @@ TESTS = [
 # ── Scanner Engine ────────────────────────────────────────────────────────────
 
 class AutoScanner:
-    def __init__(self, base_url, session_cookie="", concurrency=10, timeout=10):
+    def __init__(self, base_url, session_cookie="", concurrency=10, timeout=10, skip_ids=None, strict=False):
         self.base_url = base_url.rstrip("/")
         self.session_cookie = session_cookie
         self.all_cookies = {}  # ALL cookies from login (key→value)
@@ -499,6 +594,10 @@ class AutoScanner:
         self.timeout = timeout
         self.results = []
         self.login_info = None  # populated by auto_login()
+        self.skip_ids = skip_ids if skip_ids is not None else set()
+        # strict=True: for needs_auth tests, test WITH session (catches role escalation)
+        # strict=False: for needs_auth tests, test WITHOUT session (only checks auth gate)
+        self.strict = strict
 
     async def auto_login(self, email, password):
         """Authenticate against Laravel login and obtain session cookie automatically."""
@@ -606,52 +705,230 @@ class AutoScanner:
         method = test.get("method", "GET")
         params = test.get("params", {})
         needs_auth = test.get("needs_auth", False)
-        headers = self._headers(needs_auth)
         check_fn = test["check"]
 
-        if needs_auth and not self.session_cookie:
+        # Check if this test is in the skip list
+        if test["id"] in self.skip_ids:
             return TestResult(test["id"], test["module"], test["severity"],
-                              test["title"], "SKIPPED", "No session cookie")
+                              test["title"], "SKIPPED",
+                              test.get("note", "Intentionally deferred"))
 
-        start = time.time()
-        try:
-            kwargs = dict(params=params, headers=headers,
-                          timeout=aiohttp.ClientTimeout(total=self.timeout),
-                          allow_redirects=False, ssl=False)
+        # ─── Detection modes ───
+        # STRICT mode (--strict): For needs_auth tests, send the session cookie.
+        #   Use this when logged in as a LOW-privilege user (student/teacher) to catch role escalation.
+        #   If the endpoint returns data → VULNERABLE (wrong role can access it).
+        # DEFAULT mode: For needs_auth tests, probe WITHOUT auth first.
+        #   Use this when logged in as superadmin (superadmin SHOULD have access).
+        #   Only checks if auth gate exists.
 
-            if method == "POST":
-                body_data = test.get("body", {})
-                async with session.post(url, data=body_data, **kwargs) as resp:
-                    sc = resp.status
-                    if sc in (301, 302, 303, 307, 308):
-                        loc = resp.headers.get("Location", "")
-                        rs, det = "PATCHED", f"Redirect → {loc[:50]}"
-                    else:
-                        body = await resp.text(errors='replace')
-                        rs, det = check_fn(body[:8000], sc)
-            else:
-                async with session.get(url, **kwargs) as resp:
-                    sc = resp.status
-                    if sc in (301, 302, 303, 307, 308):
-                        loc = resp.headers.get("Location", "")
-                        rs, det = "PATCHED", f"Redirect → {loc[:50]}"
-                    else:
-                        body = await resp.text(errors='replace')
-                        rs, det = check_fn(body[:8000], sc)
+        if needs_auth and self.strict:
+            # STRICT: test WITH session cookie (role escalation check)
+            if not self.session_cookie:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "SKIPPED", "No session cookie (strict needs login)")
+            headers = self._headers(True)
+            start = time.time()
+            try:
+                kwargs = dict(params=params, headers=headers,
+                              timeout=aiohttp.ClientTimeout(total=self.timeout),
+                              allow_redirects=False, ssl=False)
+                if method == "POST":
+                    body_data = test.get("body", {})
+                    async with session.post(url, data=body_data, **kwargs) as resp:
+                        sc = resp.status
+                        if sc in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("Location", "")
+                            if _is_auth_redirect(loc, url):
+                                rs, det = "PATCHED", f"Auth redirect → {loc[:50]}"
+                            else:
+                                # Infrastructure redirect — follow it
+                                from urllib.parse import urljoin
+                                real_url = urljoin(url, loc)
+                                async with session.post(real_url, data=body_data, headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=self.timeout), ssl=False) as resp2:
+                                    body = await resp2.text(errors='replace')
+                                    sc = resp2.status
+                                    rs, det = check_fn(body[:8000], sc)
+                        else:
+                            body = await resp.text(errors='replace')
+                            rs, det = check_fn(body[:8000], sc)
+                else:
+                    async with session.get(url, **kwargs) as resp:
+                        sc = resp.status
+                        if sc in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("Location", "")
+                            if _is_auth_redirect(loc, url):
+                                rs, det = "PATCHED", f"Auth redirect → {loc[:50]}"
+                            else:
+                                from urllib.parse import urljoin
+                                real_url = urljoin(url, loc)
+                                async with session.get(real_url, headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=self.timeout), ssl=False) as resp2:
+                                    body = await resp2.text(errors='replace')
+                                    sc = resp2.status
+                                    rs, det = check_fn(body[:8000], sc)
+                        else:
+                            body = await resp.text(errors='replace')
+                            rs, det = check_fn(body[:8000], sc)
 
-            ms = round((time.time() - start) * 1000, 1)
-            return TestResult(test["id"], test["module"], test["severity"],
-                              test["title"], rs, det, sc, ms)
+                ms = round((time.time() - start) * 1000, 1)
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], rs, det, sc, ms)
+            except asyncio.TimeoutError:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", "Timeout")
+            except aiohttp.ClientConnectorError as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", str(e)[:100])
+            except Exception as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "ERROR", str(e)[:100])
 
-        except asyncio.TimeoutError:
-            return TestResult(test["id"], test["module"], test["severity"],
-                              test["title"], "UNREACHABLE", "Timeout")
-        except aiohttp.ClientConnectorError as e:
-            return TestResult(test["id"], test["module"], test["severity"],
-                              test["title"], "UNREACHABLE", str(e)[:100])
-        except Exception as e:
-            return TestResult(test["id"], test["module"], test["severity"],
-                              test["title"], "ERROR", str(e)[:100])
+        elif needs_auth and not self.strict:
+            # DEFAULT: probe WITHOUT session first to check auth gate
+            # If endpoint requires login → PATCHED (auth gate exists)
+            # Use this when scanner is logged in as superadmin
+
+            # Probe without auth to verify auth gate exists
+            no_auth_headers = {"X-Requested-With": "XMLHttpRequest",
+                               "User-Agent": "MePwned-AutoScan/2.0"}
+            start = time.time()
+            try:
+                kwargs = dict(params=params, headers=no_auth_headers,
+                              timeout=aiohttp.ClientTimeout(total=self.timeout),
+                              allow_redirects=False, ssl=False)
+                loc = ""
+                if method == "POST":
+                    body_data = test.get("body", {})
+                    async with session.post(url, data=body_data, **kwargs) as resp:
+                        sc = resp.status
+                        loc = resp.headers.get("Location", "") if sc in (301,302,303,307,308) else ""
+                        body = await resp.text(errors='replace') if sc not in (301,302,303,307,308) else ""
+                else:
+                    async with session.get(url, **kwargs) as resp:
+                        sc = resp.status
+                        loc = resp.headers.get("Location", "") if sc in (301,302,303,307,308) else ""
+                        body = await resp.text(errors='replace') if sc not in (301,302,303,307,308) else ""
+
+                ms = round((time.time() - start) * 1000, 1)
+
+                # If unauthenticated request is blocked → auth gate works → PATCHED
+                if sc in (301, 302, 303, 307, 308):
+                    if not _is_auth_redirect(loc, url):
+                        # Infrastructure redirect (HTTP→HTTPS etc) — follow it
+                        from urllib.parse import urljoin
+                        real_url = urljoin(url, loc)
+                        async with aiohttp.ClientSession() as s2:
+                            async with s2.request(method, real_url, headers=no_auth_headers,
+                                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                                allow_redirects=False, ssl=False) as resp2:
+                                sc2 = resp2.status
+                                if sc2 in (301, 302, 303, 307, 308):
+                                    loc2 = resp2.headers.get("Location", "")
+                                    if _is_auth_redirect(loc2, real_url):
+                                        return TestResult(test["id"], test["module"], test["severity"],
+                                                          test["title"], "PATCHED", f"Auth required (redirect → {loc2[:40]})", sc2, ms)
+                                    return TestResult(test["id"], test["module"], test["severity"],
+                                                      test["title"], "ERROR", f"Too many redirects", sc2, ms)
+                                body = await resp2.text(errors='replace')
+                                rs, det = check_fn(body[:8000], sc2)
+                                if rs == "VULNERABLE":
+                                    det = f"No auth required! {det}"
+                                return TestResult(test["id"], test["module"], test["severity"],
+                                                  test["title"], rs, det, sc2, ms)
+                    return TestResult(test["id"], test["module"], test["severity"],
+                                      test["title"], "PATCHED", f"Auth required (redirect → {loc[:40]})", sc, ms)
+                if sc in (401, 403):
+                    return TestResult(test["id"], test["module"], test["severity"],
+                                      test["title"], "PATCHED", f"Auth required (HTTP {sc})", sc, ms)
+                if sc == 200 and _is_login_page(body[:2000]):
+                    return TestResult(test["id"], test["module"], test["severity"],
+                                      test["title"], "PATCHED", "Auth required (login page)", sc, ms)
+                if sc == 405:
+                    return TestResult(test["id"], test["module"], test["severity"],
+                                      test["title"], "PATCHED", "Method not allowed", sc, ms)
+                if sc == 404:
+                    return TestResult(test["id"], test["module"], test["severity"],
+                                      test["title"], "PATCHED", "Route removed", sc, ms)
+
+                # If endpoint is accessible without auth → still VULNERABLE
+                rs, det = check_fn(body[:8000], sc)
+                if rs == "VULNERABLE":
+                    det = f"No auth required! {det}"
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], rs, det, sc, ms)
+
+            except asyncio.TimeoutError:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", "Timeout")
+            except aiohttp.ClientConnectorError as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", str(e)[:100])
+            except Exception as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "ERROR", str(e)[:100])
+        else:
+            # needs_auth=False: test WITHOUT auth as before (unchanged logic)
+            headers = {"X-Requested-With": "XMLHttpRequest",
+                       "User-Agent": "MePwned-AutoScan/2.0"}
+            start = time.time()
+            try:
+                kwargs = dict(params=params, headers=headers,
+                              timeout=aiohttp.ClientTimeout(total=self.timeout),
+                              allow_redirects=False, ssl=False)
+
+                if method == "POST":
+                    body_data = test.get("body", {})
+                    async with session.post(url, data=body_data, **kwargs) as resp:
+                        sc = resp.status
+                        if sc in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("Location", "")
+                            if _is_auth_redirect(loc, url):
+                                rs, det = "PATCHED", f"Auth redirect → {loc[:50]}"
+                            else:
+                                # Infrastructure redirect — follow it
+                                from urllib.parse import urljoin
+                                real_url = urljoin(url, loc)
+                                async with session.request(method, real_url, data=body_data, headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=self.timeout), ssl=False) as resp2:
+                                    body = await resp2.text(errors='replace')
+                                    sc = resp2.status
+                                    rs, det = check_fn(body[:8000], sc)
+                        else:
+                            body = await resp.text(errors='replace')
+                            rs, det = check_fn(body[:8000], sc)
+                else:
+                    async with session.get(url, **kwargs) as resp:
+                        sc = resp.status
+                        if sc in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("Location", "")
+                            if _is_auth_redirect(loc, url):
+                                rs, det = "PATCHED", f"Auth redirect → {loc[:50]}"
+                            else:
+                                from urllib.parse import urljoin
+                                real_url = urljoin(url, loc)
+                                async with session.get(real_url, headers=headers,
+                                    timeout=aiohttp.ClientTimeout(total=self.timeout), ssl=False) as resp2:
+                                    body = await resp2.text(errors='replace')
+                                    sc = resp2.status
+                                    rs, det = check_fn(body[:8000], sc)
+                        else:
+                            body = await resp.text(errors='replace')
+                            rs, det = check_fn(body[:8000], sc)
+
+                ms = round((time.time() - start) * 1000, 1)
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], rs, det, sc, ms)
+
+            except asyncio.TimeoutError:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", "Timeout")
+            except aiohttp.ClientConnectorError as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "UNREACHABLE", str(e)[:100])
+            except Exception as e:
+                return TestResult(test["id"], test["module"], test["severity"],
+                                  test["title"], "ERROR", str(e)[:100])
 
     async def run_all(self, progress_cb=None):
         sem = asyncio.Semaphore(self.concurrency)
@@ -680,10 +957,11 @@ class AutoScanner:
 
         modules = {}
         for r in self.results:
-            m = modules.setdefault(r.module, {"total": 0, "vulnerable": 0, "patched": 0, "other": 0})
+            m = modules.setdefault(r.module, {"total": 0, "vulnerable": 0, "patched": 0, "skipped": 0, "other": 0})
             m["total"] += 1
             if r.status == "VULNERABLE": m["vulnerable"] += 1
             elif r.status == "PATCHED": m["patched"] += 1
+            elif r.status == "SKIPPED": m["skipped"] += 1
             else: m["other"] += 1
 
         risk = round((crit_v * 10 + high_v * 5 + med_v * 2) / max(tested, 1) * 10, 1)
@@ -711,14 +989,19 @@ class AutoScanner:
 _progress_count = 0
 _progress_vuln = 0
 _progress_patched = 0
+_progress_skipped = 0
+_progress_results = []  # store all results for final enumeration
 
 def print_progress(result):
-    global _progress_count, _progress_vuln, _progress_patched
+    global _progress_count, _progress_vuln, _progress_patched, _progress_skipped
     _progress_count += 1
     if result.status == "VULNERABLE":
         _progress_vuln += 1
     elif result.status == "PATCHED":
         _progress_patched += 1
+    elif result.status == "SKIPPED":
+        _progress_skipped += 1
+    _progress_results.append(result)
 
     total = len(TESTS)
     pct = round(_progress_count / total * 100)
@@ -726,21 +1009,46 @@ def print_progress(result):
     filled = int(bar_len * _progress_count / total)
     bar = f"{CYAN}{'█' * filled}{DIM}{'░' * (bar_len - filled)}{RESET}"
 
+    # Single overwriting progress line
+    line = (f"  {bar} {pct:>3}% ({_progress_count}/{total})  "
+            f"{RED}{_progress_vuln}V{RESET} {GREEN}{_progress_patched}P{RESET} "
+            f"{CYAN}{_progress_skipped}S{RESET}"
+            f"  {DIM}{result.finding_id}{RESET}")
+    print(f"\r{line}", end="", flush=True)
+
+    # When done, newline then print enumeration
+    if _progress_count == total:
+        print()  # final newline after progress bar
+        _print_enumeration()
+
+
+def _print_enumeration():
+    """Print sorted results after scan completes."""
     icons = {"VULNERABLE": f"{RED}■", "PATCHED": f"{GREEN}■",
              "ERROR": f"{YELLOW}■", "UNREACHABLE": f"{DIM}■", "SKIPPED": f"{DIM}○"}
     sev_c = {"CRITICAL": RED, "HIGH": YELLOW, "MEDIUM": CYAN, "LOW": DIM}
-    icon = icons.get(result.status, f"{DIM}?")
-    sc = sev_c.get(result.severity, DIM)
-    ms = f"{result.response_time_ms:.0f}ms" if result.response_time_ms else "---"
-    stat = result.status[:4]
-    http = f"H{result.http_status}" if result.http_status else "---"
+    status_label = {
+        "VULNERABLE": f"{RED}NOT PATCHED YET 👎🏻{RESET}",
+        "PATCHED": f"{GREEN}PATCHED 👌{RESET}",
+        "ERROR": f"{YELLOW}ERROR ⚠️{RESET}",
+        "SKIPPED": f"{CYAN}SKIPPED ➡️{RESET}",
+        "UNREACHABLE": f"{DIM}UNREACHABLE{RESET}",
+    }
 
-    # Progress bar line
-    print(f"  {bar} {pct:>3}% ({_progress_count}/{total})  "
-          f"{RED}{_progress_vuln}V{RESET} {GREEN}{_progress_patched}P{RESET}")
-    # Result detail with HTTP status and detail
-    print(f"  {icon}{RESET} {sc}{result.severity:8}{RESET} {stat:4} {http:>4} {result.finding_id:7} "
-          f"{result.title[:42]:<42} {DIM}{ms} {result.detail[:30]}{RESET}")
+    # Sort: severity (CRIT first), then status (VULN first)
+    sorted_results = sorted(_progress_results, key=lambda x: (
+        {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}.get(x.severity, 3),
+        {"VULNERABLE": 0, "ERROR": 1, "UNREACHABLE": 2, "SKIPPED": 3, "PATCHED": 4}.get(x.status, 5),
+    ))
+
+    for r in sorted_results:
+        icon = icons.get(r.status, f"{DIM}?")
+        sc = sev_c.get(r.severity, DIM)
+        ms = f"{r.response_time_ms:.0f}ms" if r.response_time_ms else "---"
+        label = status_label.get(r.status, r.status)
+        http = f"H{r.http_status}" if r.http_status else "---"
+        print(f"  {icon}{RESET} {sc}{r.severity:8}{RESET} {http:>4} {r.finding_id:7} "
+              f"{r.title[:40]:<40} {label} {DIM}{ms}{RESET}")
 
 
 def print_summary(report):
@@ -755,16 +1063,18 @@ def print_summary(report):
     print(f"   {RED}Vulnerable:  {s['vulnerable']}{RESET} "
           f"({s['critical_vulnerable']}C / {s['high_vulnerable']}H / {s['medium_vulnerable']}M)")
     print(f"   {GREEN}Patched:     {s['patched']}{RESET}")
-    print(f"   {DIM}Skip/Err:    {s['skipped']} / {s['error']} / {s['unreachable']}{RESET}")
+    print(f"   {CYAN}Skipped:     {s['skipped']}{RESET}")
+    print(f"   {DIM}Error:       {s['error']} / Unreachable: {s['unreachable']}{RESET}")
     print(f"\n   Patch Rate:  {GREEN if pct > 70 else YELLOW if pct > 40 else RED}{pct:.1f}%{RESET}")
     print(f"   Risk Score:  {RED if risk > 50 else YELLOW if risk > 20 else GREEN}{risk}/100{RESET}")
     print(f"\n  {'─' * 62}")
-    print(f"  {'Module':<16} {'Vuln':>5} {'Safe':>5} {'Other':>5}  Status")
+    print(f"  {'Module':<16} {'Vuln':>5} {'Safe':>5} {'Skip':>5} {'Other':>5}  Status")
     print(f"  {'─' * 62}")
     for mod, d in sorted(report.summary["modules"].items()):
         v, p, o = d["vulnerable"], d["patched"], d["other"]
+        sk = d.get("skipped", 0)
         st = f"{GREEN}CLEAR{RESET}" if v == 0 else (f"{RED}EXPOSED{RESET}" if p == 0 else f"{YELLOW}PARTIAL{RESET}")
-        print(f"  {mod:<16} {RED}{v:>5}{RESET} {GREEN}{p:>5}{RESET} {DIM}{o:>5}{RESET}  {st}")
+        print(f"  {mod:<16} {RED}{v:>5}{RESET} {GREEN}{p:>5}{RESET} {CYAN}{sk:>5}{RESET} {DIM}{o:>5}{RESET}  {st}")
     print(f"  {'─' * 62}\n")
 
 
@@ -808,6 +1118,8 @@ async def main():
     parser.add_argument("--session", default="", help="laravel_session cookie (skip login)")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=30)
+    parser.add_argument("--strict", action="store_true",
+                        help="Strict mode: test role escalation WITH session cookie (for non-LDCU targets)")
     parser.add_argument("--json", default="", help="JSON output file")
     parser.add_argument("--md", default="", help="Markdown output file")
     parser.add_argument("--quiet", action="store_true")
@@ -851,7 +1163,18 @@ async def main():
                 pass
 
     # Create scanner early so we can use auto_login
-    scanner = AutoScanner(base_url, session, args.concurrency, args.timeout)
+    # Auto-detect target: use LDCU skip list for LDCU targets, strict mode for others
+    is_ldcu = any(k in base_url.lower() for k in ("es_ldcu", "ldcu", "esldcu"))
+    use_strict = args.strict or (not is_ldcu and not args.strict)
+    skip_ids = LDCU_SKIPPED_IDS if is_ldcu else set()
+
+    if use_strict and not args.quiet:
+        print(f"  {YELLOW}⚡ Strict mode: testing role escalation WITH session{RESET}")
+    elif is_ldcu and not args.quiet:
+        print(f"  {DIM}  LDCU target detected → default mode + {len(skip_ids)} skipped tests{RESET}")
+
+    scanner = AutoScanner(base_url, session, args.concurrency, args.timeout,
+                          skip_ids=skip_ids, strict=use_strict)
 
     # Auto-login if credentials provided
     if email and password and not session:

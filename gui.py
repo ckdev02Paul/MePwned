@@ -726,14 +726,21 @@ def api_autoscan():
     password = data.get("password", "")
     concurrency = int(data.get("concurrency", 10))
     timeout_sec = int(data.get("timeout", 10))
+    strict = data.get("strict", None)  # None = auto-detect
 
     if not base_url:
         return jsonify({"error": "base_url required"}), 400
 
+    # Auto-detect target
+    is_ldcu = any(k in base_url.lower() for k in ("es_ldcu", "ldcu", "esldcu"))
+    use_strict = strict if strict is not None else (not is_ldcu)
+    skip_ids = mod.LDCU_SKIPPED_IDS if is_ldcu else set()
+
     import asyncio as _aio
 
     async def _run():
-        scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec)
+        scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec,
+                                  skip_ids=skip_ids, strict=use_strict)
         # Auto-login if credentials provided and no session
         login_result = None
         if email and password and not session_cookie:
@@ -764,15 +771,22 @@ def api_autoscan_stream():
     session_cookie = data.get("session", "")
     concurrency = int(data.get("concurrency", 10))
     timeout_sec = int(data.get("timeout", 10))
+    strict = data.get("strict", None)
 
     if not base_url:
         return jsonify({"error": "base_url required"}), 400
+
+    # Auto-detect target
+    is_ldcu_target = any(k in base_url.lower() for k in ("es_ldcu", "ldcu", "esldcu"))
+    use_strict_mode = strict if strict is not None else (not is_ldcu_target)
 
     def generate():
         import importlib.util, asyncio as _aio
         spec = importlib.util.spec_from_file_location("autoscan", os.path.join(CLI, "autoscan.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+
+        skip_ids = mod.LDCU_SKIPPED_IDS if is_ldcu_target else set()
 
         results_queue = []
 
@@ -781,7 +795,8 @@ def api_autoscan_stream():
             results_queue.append(_ad(r))
 
         async def _run():
-            scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec)
+            scanner = mod.AutoScanner(base_url, session_cookie, concurrency, timeout_sec,
+                                      skip_ids=skip_ids, strict=use_strict_mode)
             await scanner.run_all(progress_cb=on_result)
             return scanner.build_report()
 
