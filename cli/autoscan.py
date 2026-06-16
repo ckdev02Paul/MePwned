@@ -37,7 +37,7 @@ BANNER = f"""{CYAN}
   ┌─────────────────────────────────────────────────────────┐
   │  {BOLD}AUTOSCAN{RESET}{CYAN}  — Security Verification Engine              │
   │  Non-destructive · Maps to Unified Security Report      │
-  │  64 checks · 11 modules · Parallel execution            │
+  │  68 checks · 12 modules · Parallel execution            │
   └─────────────────────────────────────────────────────────┘
 {RESET}"""
 
@@ -226,6 +226,24 @@ TESTS = [
      "title": "DB backup trigger — /backupdb",
      "method": "GET", "path": "/backupdb",
      "params": {}, "needs_auth": False, "check": _check_unauth},
+
+    # ═══ RCE / ExecVeil (SA-04) ═══
+    {"id": "SA-04a", "module": "RCE", "severity": "CRITICAL",
+     "title": "eval() trigger — prinsf9print (unauth)",
+     "method": "GET", "path": "/prinsf9print/1",
+     "params": {}, "needs_auth": False, "check": _check_unauth},
+    {"id": "SA-04b", "module": "RCE", "severity": "CRITICAL",
+     "title": "eval() trigger — dynamic_pdf (auth)",
+     "method": "GET", "path": "/dynamic_pdf/1",
+     "params": {}, "needs_auth": True, "check": _check_unauth},
+    {"id": "SA-04c", "module": "RCE", "severity": "CRITICAL",
+     "title": "Formula injection vector — updatetargettable sf9templateinfo",
+     "method": "GET", "path": "/updatetargettable",
+     "params": {"table": "sf9templateinfo"}, "needs_auth": False, "check": _check_unauth},
+    {"id": "SA-04d", "module": "RCE", "severity": "CRITICAL",
+     "title": "Formula read — cloudNewData/sf9templateinfo",
+     "method": "GET", "path": "/cloudNewData/sf9templateinfo/0",
+     "params": {}, "needs_auth": False, "check": _check_json_data},
 
     # ═══ Teacher (T-01 → T-08) ═══
     {"id": "T-01", "module": "Teacher", "severity": "CRITICAL",
@@ -476,6 +494,7 @@ class AutoScanner:
     def __init__(self, base_url, session_cookie="", concurrency=10, timeout=10):
         self.base_url = base_url.rstrip("/")
         self.session_cookie = session_cookie
+        self.all_cookies = {}  # ALL cookies from login (key→value)
         self.concurrency = concurrency
         self.timeout = timeout
         self.results = []
@@ -559,8 +578,10 @@ class AutoScanner:
                         return False, "Login redirected but no session cookie found"
 
                     self.session_cookie = session_val
+                    # Capture ALL cookies from the jar for replay
+                    self.all_cookies = {c.key: c.value for c in jar}
                     self.login_info = {"email": email, "status": "authenticated"}
-                    return True, f"Authenticated as {email}"
+                    return True, f"Authenticated as {email} ({len(self.all_cookies)} cookies)"
 
         except asyncio.TimeoutError:
             return False, "Login timed out"
@@ -572,7 +593,12 @@ class AutoScanner:
     def _headers(self, needs_auth):
         h = {"X-Requested-With": "XMLHttpRequest", "User-Agent": "MePwned-AutoScan/2.0"}
         if needs_auth and self.session_cookie:
-            h["Cookie"] = f"laravel_session={self.session_cookie}"
+            if self.all_cookies:
+                # Replay ALL cookies from login (session + XSRF + any others)
+                h["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.all_cookies.items())
+            else:
+                # Fallback: manual session cookie only
+                h["Cookie"] = f"laravel_session={self.session_cookie}"
         return h
 
     async def _run_one(self, session, test):
@@ -682,7 +708,24 @@ class AutoScanner:
 
 # ── CLI Output ────────────────────────────────────────────────────────────────
 
+_progress_count = 0
+_progress_vuln = 0
+_progress_patched = 0
+
 def print_progress(result):
+    global _progress_count, _progress_vuln, _progress_patched
+    _progress_count += 1
+    if result.status == "VULNERABLE":
+        _progress_vuln += 1
+    elif result.status == "PATCHED":
+        _progress_patched += 1
+
+    total = len(TESTS)
+    pct = round(_progress_count / total * 100)
+    bar_len = 30
+    filled = int(bar_len * _progress_count / total)
+    bar = f"{CYAN}{'█' * filled}{DIM}{'░' * (bar_len - filled)}{RESET}"
+
     icons = {"VULNERABLE": f"{RED}■", "PATCHED": f"{GREEN}■",
              "ERROR": f"{YELLOW}■", "UNREACHABLE": f"{DIM}■", "SKIPPED": f"{DIM}○"}
     sev_c = {"CRITICAL": RED, "HIGH": YELLOW, "MEDIUM": CYAN, "LOW": DIM}
@@ -690,8 +733,14 @@ def print_progress(result):
     sc = sev_c.get(result.severity, DIM)
     ms = f"{result.response_time_ms:.0f}ms" if result.response_time_ms else "---"
     stat = result.status[:4]
-    print(f"  {icon}{RESET} {sc}{result.severity:8}{RESET} {stat:4} {result.finding_id:7} "
-          f"{result.title[:48]:<48} {DIM}{ms}{RESET}")
+    http = f"H{result.http_status}" if result.http_status else "---"
+
+    # Progress bar line
+    print(f"  {bar} {pct:>3}% ({_progress_count}/{total})  "
+          f"{RED}{_progress_vuln}V{RESET} {GREEN}{_progress_patched}P{RESET}")
+    # Result detail with HTTP status and detail
+    print(f"  {icon}{RESET} {sc}{result.severity:8}{RESET} {stat:4} {http:>4} {result.finding_id:7} "
+          f"{result.title[:42]:<42} {DIM}{ms} {result.detail[:30]}{RESET}")
 
 
 def print_summary(report):
@@ -757,8 +806,8 @@ async def main():
     parser.add_argument("--email", default="", help="Login email/username (auto-login)")
     parser.add_argument("--password", default="", help="Login password (auto-login)")
     parser.add_argument("--session", default="", help="laravel_session cookie (skip login)")
-    parser.add_argument("--concurrency", type=int, default=10)
-    parser.add_argument("--timeout", type=int, default=10)
+    parser.add_argument("--concurrency", type=int, default=3)
+    parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--json", default="", help="JSON output file")
     parser.add_argument("--md", default="", help="Markdown output file")
     parser.add_argument("--quiet", action="store_true")
@@ -770,7 +819,7 @@ async def main():
     if not base_url:
         try:
             base_url = input(f"  {CYAN}Target URL:{RESET} ").strip().rstrip("/")
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             return
     if not base_url:
         print(f"  {RED}No URL.{RESET}"); return
@@ -787,18 +836,18 @@ async def main():
         print(f"  {DIM}3) Skip (unauth tests only){RESET}")
         try:
             choice = input(f"  {CYAN}Choice [1/2/3]:{RESET} ").strip()
-        except KeyboardInterrupt:
-            return
+        except (KeyboardInterrupt, EOFError):
+            choice = "3"
         if choice == "1":
             try:
                 email = input(f"  {CYAN}Email/Username:{RESET} ").strip()
                 password = input(f"  {CYAN}Password:{RESET} ").strip()
-            except KeyboardInterrupt:
-                return
+            except (KeyboardInterrupt, EOFError):
+                pass
         elif choice == "2":
             try:
                 session = input(f"  {CYAN}Session cookie:{RESET} ").strip()
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, EOFError):
                 pass
 
     # Create scanner early so we can use auto_login
@@ -823,6 +872,11 @@ async def main():
     print(f"\n  {'─' * 62}\n")
 
     t0 = time.time()
+    # Reset progress counters
+    global _progress_count, _progress_vuln, _progress_patched
+    _progress_count = 0
+    _progress_vuln = 0
+    _progress_patched = 0
     await scanner.run_all(progress_cb=None if args.quiet else print_progress)
     elapsed = time.time() - t0
 
@@ -834,7 +888,7 @@ async def main():
     if not json_path and not args.quiet:
         try:
             json_path = input(f"  {CYAN}Save JSON?{RESET} (filename or Enter): ").strip()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             json_path = ""
     if json_path:
         with open(json_path, "w", encoding="utf-8") as f:
@@ -845,7 +899,7 @@ async def main():
     if not md_path and not args.quiet:
         try:
             md_path = input(f"  {CYAN}Save Markdown?{RESET} (filename or Enter): ").strip()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             md_path = ""
     if md_path:
         with open(md_path, "w", encoding="utf-8") as f:

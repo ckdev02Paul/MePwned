@@ -669,6 +669,31 @@ function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&l
     }));
   });
 });
+
+// persist tool field values (email, password, etc.) per tool
+function saveToolFields() {
+  if(!currentTool) return;
+  const data = getFormData();
+  localStorage.setItem('mp_fields_' + currentTool.id, JSON.stringify(data));
+}
+function loadToolFields(toolId) {
+  try { return JSON.parse(localStorage.getItem('mp_fields_' + toolId) || '{}'); } catch(e) { return {}; }
+}
+// hook: after buildForm, restore saved values
+const _origBuildForm = buildForm;
+buildForm = function(tool) {
+  _origBuildForm(tool);
+  const saved = loadToolFields(tool.id);
+  Object.keys(saved).forEach(id => {
+    const el = document.querySelector(`#form-scroll [data-id="${id}"]`);
+    if(el && saved[id] && !el.dataset.global) { el.value = saved[id]; }
+  });
+  // attach save-on-change to all fields
+  document.querySelectorAll('#form-scroll [data-id]').forEach(el => {
+    el.addEventListener('change', saveToolFields);
+    el.addEventListener('input', saveToolFields);
+  });
+};
 </script>
 </body>
 </html>

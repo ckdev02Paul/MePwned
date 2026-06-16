@@ -351,8 +351,8 @@ TOOLS = [
       {"id":"email",       "label":"Email / Username",  "type":"text",     "default":""},
       {"id":"password",    "label":"Password",          "type":"password", "default":""},
       {"id":"session",     "label":"Session (or auto-login above)", "type":"password", "default":"", "global":True},
-      {"id":"concurrency", "label":"Concurrency",       "type":"number",   "default":"10"},
-      {"id":"timeout",     "label":"Timeout (sec)",     "type":"number",   "default":"10"},
+      {"id":"concurrency", "label":"Concurrency",       "type":"number",   "default":"3"},
+      {"id":"timeout",     "label":"Timeout (sec)",     "type":"number",   "default":"30"},
     ],
     "stdin": None,
   },
@@ -594,8 +594,7 @@ def run_tool(tool_id):
         cmd_args = [sys.executable, "-u", script,
                     "--url", data.get("base_url", ""),
                     "--concurrency", str(data.get("concurrency", "10")),
-                    "--timeout", str(data.get("timeout", "10")),
-                    "--quiet"]
+                    "--timeout", str(data.get("timeout", "10"))]
         if data.get("session"):
             cmd_args += ["--session", data["session"]]
         if data.get("email"):
